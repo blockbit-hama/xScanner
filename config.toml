@@ -1,0 +1,18 @@
+[blockchain.ethereum]
+api = "https://mainnet.infura.io/v3/143c82adb1704e108b6896b5b9ae9099"
+symbol = "eth"# e.g., Infura, Alchemy
+start_block = 19000000
+interval_secs = 5
+
+[blockchain.bitcoin]
+api = "https://blockchain.info/rawblock/" # Base URL, adjust path in client as needed
+symbol = "btc"#
+start_block = 800000
+interval_secs = 120
+
+[repository]
+postgresql_url = "postgres://user:password@host:port/database"
+leveldb_path = "./customer_db"
+customer_address_file = "./customer_addresses.txt"
+
+
