@@ -12,6 +12,7 @@ use crate::coin::ethereum::model::EthereumBlock;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::json;
+use std::io::{Error as IoError, ErrorKind};
 
 #[derive(Clone)]
 pub struct EthereumClient {
@@ -27,7 +28,7 @@ impl EthereumClient {
     }
   }
   
-  pub async fn fetch_block_by_number(&self, block_number: u64) -> Result<EthereumBlock, reqwest::Error> {
+  pub async fn fetch_block_by_number(&self, block_number: u64) -> Result<EthereumBlock, Box<dyn std::error::Error>> {
     let block_number_hex = format!("0x{:X}", block_number);
     let payload = json!({
             "jsonrpc": "2.0",
@@ -35,8 +36,24 @@ impl EthereumClient {
             "params": [block_number_hex, true],
             "id": 1
         });
-    
-    self.fetch_json(&payload).await
+
+    let response = self.client
+      .post(&self.api_url)
+      .json(&payload)
+      .send()
+      .await?;
+
+    let response_text = response.text().await?;
+    log::debug!("[ETH] Raw API response: {}", response_text);
+
+    let block: EthereumBlock = serde_json::from_str(&response_text)?;
+
+    // Check if result is null (block not yet created)
+    if block.result.is_none() {
+      return Err("Block not yet created (result is null)".into());
+    }
+
+    Ok(block)
   }
 }
 

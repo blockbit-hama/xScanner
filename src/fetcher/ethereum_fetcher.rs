@@ -19,7 +19,8 @@ pub struct EthereumFetcher {
 #[async_trait]
 impl BlockFetcher for EthereumFetcher {
   async fn fetch_block(&self, block_number: u64) -> Result<BlockData, AppError> {
-    let block = self.client.fetch_block_by_number(block_number).await?;
+    let block = self.client.fetch_block_by_number(block_number).await
+      .map_err(|e| AppError::Client(format!("Failed to fetch ETH block: {}", e)))?;
     Ok(BlockData::Ethereum(block))
   }
   

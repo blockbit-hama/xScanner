@@ -2,11 +2,15 @@ use crate::coin::bitcoin::model::BitcoinBlock;
 use crate::coin::ethereum::model::EthereumBlock;
 use tokio::sync::mpsc::{Sender, Receiver};
 
-// ====== BlockData (BTC or ETH) ======
+// ====== BlockData - ?? ???? ?? ======
 #[derive(Debug)]
 pub enum BlockData {
   Ethereum(EthereumBlock),
   Bitcoin(BitcoinBlock),
+  Tron(crate::coin::tron::model::TronBlock),
+  Theta(crate::coin::theta::model::ThetaBlock),
+  Icon(crate::coin::icon::model::IconBlock),
+  // ?? ????? ??? ??
 }
 
 // ====== Channel aliases ======

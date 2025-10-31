@@ -1,0 +1,35 @@
+[blockchain.ethereum]
+api = "https://mainnet.infura.io/v3/143c82adb1704e108b6896b5b9ae9099"
+symbol = "eth"
+start_block = 19000000
+interval_secs = 5
+
+[blockchain.bitcoin]
+api = "https://blockchain.info/rawblock/"
+symbol = "btc"
+start_block = 800000
+interval_secs = 120
+
+[blockchain.chains.tron]
+api = "https://api.trongrid.io"
+symbol = "tron"
+start_block = 50000000
+interval_secs = 3
+
+[blockchain.chains.theta]
+api = "https://mainnet-rpc.thetatoken.org"
+symbol = "theta"
+start_block = 10000000
+interval_secs = 5
+
+[blockchain.chains.icon]
+api = "https://ctz.solidwallet.io/api/v3"
+symbol = "icon"
+start_block = 50000000
+interval_secs = 5
+
+[repository]
+memory_db = true
+postgresql_url = "postgres://dummy:dummy@localhost:5432/dummy"
+leveldb_path = "./dummy_db"
+customer_address_file = "./customer_addresses.txt"

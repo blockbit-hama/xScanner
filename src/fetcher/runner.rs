@@ -29,9 +29,12 @@ pub async fn run_fetcher<F: BlockFetcher + 'static>(
   loop {
     tick.tick().await;
     let block_to_fetch = current_block_number;
-    
+
+    info!("[{} Fetcher] 블록 #{} 가져오는 중...", fetcher.chain_name(), block_to_fetch);
+
     match fetcher.fetch_block(block_to_fetch).await {
       Ok(block_data) => {
+        info!("[{} Fetcher] ✅ 블록 #{} 가져오기 성공!", fetcher.chain_name(), block_to_fetch);
         if let Err(e) = sender.send(block_data).await {
           error!(
                   "[{} Fetcher] Failed to send block {}: {}",
@@ -39,16 +42,19 @@ pub async fn run_fetcher<F: BlockFetcher + 'static>(
                   block_to_fetch,
                   e
               );
+        } else {
+          info!("[{} Fetcher] 블록 #{} Analyzer로 전송 완료", fetcher.chain_name(), block_to_fetch);
         }
         current_block_number += 1;
       }
       Err(e) => {
         warn!(
-              "[{} Fetcher] Error fetching block {}: {}",
-              fetcher.chain_name(),
-              block_to_fetch,
-              e
-          );
+          "[{} Fetcher] ⏳ 블록 #{} 가져오기 실패: {} | 5초 후 재시도...",
+          fetcher.chain_name(),
+          block_to_fetch,
+          e
+        );
+        // 블록 번호를 증가시키지 않고 다음 interval에 재시도
       }
     }
   }
