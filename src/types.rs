@@ -10,6 +10,13 @@ pub enum BlockData {
   Tron(crate::coin::tron::model::TronBlock),
   Theta(crate::coin::theta::model::ThetaBlock),
   Icon(crate::coin::icon::model::IconBlock),
+  Aion(crate::coin::aion::model::AionBlock),
+  Algorand(crate::coin::algorand::model::AlgorandBlock),
+  Gxchain(crate::coin::gxchain::model::GxchainBlock),
+  Quark(crate::coin::quark::model::QuarkBlock),
+  Terra(crate::coin::terra::model::TerraBlock),
+  Tezos(crate::coin::tezos::model::TezosBlock),
+  Wayki(crate::coin::wayki::model::WaykiBlock),
   // ?? ????? ??? ??
 }
 

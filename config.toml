@@ -2,7 +2,7 @@
 [blockchain.ethereum]
 api = "https://mainnet.infura.io/v3/51d1d5bfaeab44fc87d77cf298d7c591"
 symbol = "eth"
-start_block = 23695594
+start_block = 23695633
 interval_secs = 5
 
 [repository]

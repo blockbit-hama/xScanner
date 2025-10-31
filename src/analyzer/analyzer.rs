@@ -93,6 +93,13 @@ async fn analyze_block(
     BlockData::Tron(block) => analyze_tron_block(block, repository, kv_db).await,
     BlockData::Theta(block) => analyze_theta_block(block, repository, kv_db).await,
     BlockData::Icon(block) => analyze_icon_block(block, repository, kv_db).await,
+    BlockData::Aion(block) => analyze_aion_block(block, repository, kv_db).await,
+    BlockData::Algorand(block) => analyze_algorand_block(block, repository, kv_db).await,
+    BlockData::Gxchain(block) => analyze_gxchain_block(block, repository, kv_db).await,
+    BlockData::Quark(block) => analyze_quark_block(block, repository, kv_db).await,
+    BlockData::Terra(block) => analyze_terra_block(block, repository, kv_db).await,
+    BlockData::Tezos(block) => analyze_tezos_block(block, repository, kv_db).await,
+    BlockData::Wayki(block) => analyze_wayki_block(block, repository, kv_db).await,
   }
 }
 
@@ -299,19 +306,19 @@ async fn analyze_icon_block(
 ) -> Result<(String, u64, Vec<DepositInfo>), String> {
   let chain_name = "ICON";
   let block_number = block.height;
-  
+
   info!("[Analyzer] ICON Block Received: {}", block_number);
-  
+
   let mut deposits = Vec::new();
-  
+
   for tx in &block.confirmed_transaction_list {
     let to_address = &tx.to;
-    
+
       if let Ok(Some(customer_id)) = get_customer_id(repository, kv_db, to_address, chain_name).await {
       let amount_decimal = tx.value.as_ref()
         .and_then(|v| v.parse::<u64>().ok())
         .map(|v| Decimal::from(v) / Decimal::from(1_000_000_000_000_000_000u64)); // Loop to ICX
-      
+
       deposits.push(DepositInfo {
         address: to_address.clone(),
         customer_id,
@@ -322,7 +329,98 @@ async fn analyze_icon_block(
       });
     }
   }
-  
+
+  Ok((chain_name.to_string(), block_number, deposits))
+}
+
+async fn analyze_aion_block(
+  block: crate::coin::aion::model::AionBlock,
+  repository: &Arc<RepositoryWrapper>,
+  kv_db: Option<&KeyValueDB>,
+) -> Result<(String, u64, Vec<DepositInfo>), String> {
+  let chain_name = "AION";
+  let result = block.result.ok_or("Missing 'result' in AionBlock")?;
+
+  let number_hex = result.number.trim();
+  let block_number = if number_hex.starts_with("0x") {
+    u64::from_str_radix(&number_hex[2..], 16)
+  } else {
+    number_hex.parse::<u64>()
+  }.map_err(|e| format!("Failed to parse AION block number: {}", e))?;
+
+  info!("[Analyzer] 🔍 AION 블록 #{} 스캔 중... (트랜잭션: {}개)", block_number, result.transactions.len());
+
+  let mut deposits = Vec::new();
+  let mut checked_count = 0;
+
+  for tx in &result.transactions {
+    if let Some(to_address) = &tx.to {
+      checked_count += 1;
+      if let Ok(Some(customer_id)) = get_customer_id(repository, kv_db, to_address, chain_name).await {
+        let amount_hex = tx.value.as_deref().unwrap_or("0x0");
+        let amount_decimal = parse_wei_to_decimal(amount_hex).ok();
+
+        info!("[Analyzer] ✅ AION 입금 감지! 블록: {} | 고객: {} | 주소: {} | 금액: {:?} AION",
+          block_number, customer_id, to_address, amount_decimal);
+
+        deposits.push(DepositInfo {
+          address: to_address.clone(),
+          customer_id,
+          tx_hash: tx.hash.as_deref().unwrap_or("").to_string(),
+          block_number,
+          amount: amount_hex.to_string(),
+          amount_decimal,
+        });
+      }
+    }
+  }
+
+  if checked_count > 0 && deposits.is_empty() {
+    info!("[Analyzer] AION 블록 #{}: {}개 트랜잭션 확인, 고객 계정 없음", block_number, checked_count);
+  }
+
+  Ok((chain_name.to_string(), block_number, deposits))
+}
+
+async fn analyze_algorand_block(
+  block: crate::coin::algorand::model::AlgorandBlock,
+  repository: &Arc<RepositoryWrapper>,
+  kv_db: Option<&KeyValueDB>,
+) -> Result<(String, u64, Vec<DepositInfo>), String> {
+  let chain_name = "ALGORAND";
+  let block_number = block.round;
+
+  info!("[Analyzer] ALGORAND Block Received: {}", block_number);
+
+  let mut deposits = Vec::new();
+
+  for tx in &block.txns.transactions {
+    if let Some(payment) = &tx.payment {
+      let to_address = &payment.to;
+
+      if let Ok(Some(customer_id)) = get_customer_id(repository, kv_db, to_address, chain_name).await {
+        // Algorand uses microalgos (1 ALGO = 1,000,000 microalgos)
+        let amount_decimal = Decimal::from(payment.amount) / Decimal::from(1_000_000u64);
+
+        info!("[Analyzer] ✅ ALGORAND 입금 감지! 블록: {} | 고객: {} | 주소: {} | 금액: {} ALGO",
+          block_number, customer_id, to_address, amount_decimal);
+
+        deposits.push(DepositInfo {
+          address: to_address.clone(),
+          customer_id,
+          tx_hash: tx.tx.clone(),
+          block_number,
+          amount: payment.amount.to_string(),
+          amount_decimal: Some(amount_decimal),
+        });
+      }
+    }
+  }
+
+  if !deposits.is_empty() {
+    info!("[Analyzer] Found {} ALGORAND deposits in block {}", deposits.len(), block_number);
+  }
+
   Ok((chain_name.to_string(), block_number, deposits))
 }
 
@@ -382,6 +480,90 @@ fn parse_wei_to_decimal(wei_hex: &str) -> Result<Decimal, String> {
   
   // Wei? ETH? ?? (1 ETH = 10^18 Wei)
   let eth = Decimal::from(wei) / Decimal::from(1_000_000_000_000_000_000u128);
-  
+
   Ok(eth)
+}
+
+// GXCHAIN, QUARK, TERRA, TEZOS, WAYKI placeholder functions
+async fn analyze_gxchain_block(
+  _block: crate::coin::gxchain::model::GxchainBlock,
+  _repository: &Arc<RepositoryWrapper>,
+  _kv_db: Option<&KeyValueDB>,
+) -> Result<(String, u64, Vec<DepositInfo>), String> {
+  info!("[Analyzer] GXCHAIN block received (placeholder - not yet implemented)");
+  Ok(("GXCHAIN".to_string(), 0, Vec::new()))
+}
+
+async fn analyze_quark_block(
+  block: crate::coin::quark::model::QuarkBlock,
+  repository: &Arc<RepositoryWrapper>,
+  kv_db: Option<&KeyValueDB>,
+) -> Result<(String, u64, Vec<DepositInfo>), String> {
+  let chain_name = "QUARK";
+  let result = block.result.ok_or("Missing 'result' in QuarkBlock")?;
+
+  let number_hex = result.number.trim();
+  let block_number = if number_hex.starts_with("0x") {
+    u64::from_str_radix(&number_hex[2..], 16)
+  } else {
+    number_hex.parse::<u64>()
+  }.map_err(|e| format!("Failed to parse QUARK block number: {}", e))?;
+
+  info!("[Analyzer] QUARK Block Received: {}", block_number);
+
+  let mut deposits = Vec::new();
+
+  for tx in &result.transactions {
+    if let Some(to_address) = &tx.to {
+      if let Ok(Some(customer_id)) = get_customer_id(repository, kv_db, to_address, chain_name).await {
+        let amount_hex = tx.value.as_deref().unwrap_or("0x0");
+        let amount_decimal = parse_wei_to_decimal(amount_hex).ok();
+
+        deposits.push(DepositInfo {
+          address: to_address.clone(),
+          customer_id,
+          tx_hash: tx.hash.as_deref().unwrap_or("").to_string(),
+          block_number,
+          amount: amount_hex.to_string(),
+          amount_decimal,
+        });
+      }
+    }
+  }
+
+  Ok((chain_name.to_string(), block_number, deposits))
+}
+
+async fn analyze_terra_block(
+  block: crate::coin::terra::model::TerraBlock,
+  _repository: &Arc<RepositoryWrapper>,
+  _kv_db: Option<&KeyValueDB>,
+) -> Result<(String, u64, Vec<DepositInfo>), String> {
+  let chain_name = "TERRA";
+  let block_number = block.block.header.height.parse::<u64>()
+    .map_err(|e| format!("Failed to parse TERRA block number: {}", e))?;
+
+  info!("[Analyzer] TERRA Block Received: {} (placeholder)", block_number);
+  Ok((chain_name.to_string(), block_number, Vec::new()))
+}
+
+async fn analyze_tezos_block(
+  _block: crate::coin::tezos::model::TezosBlock,
+  _repository: &Arc<RepositoryWrapper>,
+  _kv_db: Option<&KeyValueDB>,
+) -> Result<(String, u64, Vec<DepositInfo>), String> {
+  info!("[Analyzer] TEZOS block received (placeholder - not yet implemented)");
+  Ok(("TEZOS".to_string(), 0, Vec::new()))
+}
+
+async fn analyze_wayki_block(
+  block: crate::coin::wayki::model::WaykiBlock,
+  _repository: &Arc<RepositoryWrapper>,
+  _kv_db: Option<&KeyValueDB>,
+) -> Result<(String, u64, Vec<DepositInfo>), String> {
+  let chain_name = "WAYKI";
+  let block_number = block.height;
+
+  info!("[Analyzer] WAYKI Block Received: {} (placeholder)", block_number);
+  Ok((chain_name.to_string(), block_number, Vec::new()))
 }
