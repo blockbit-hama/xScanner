@@ -88,6 +88,8 @@ impl Repository for MemoryRepository {
     async fn save_deposit_event(
         &self,
         address: &str,
+        _wallet_id: &str,
+        _account_id: Option<&str>,
         chain_name: &str,
         tx_hash: &str,
         block_number: u64,
@@ -113,6 +115,11 @@ impl Repository for MemoryRepository {
         });
 
         Ok(())
+    }
+
+    async fn get_address_metadata(&self, _address: &str, _chain_name: &str) -> Result<Option<(String, Option<String>)>, AppError> {
+        // MemoryRepository doesn't store address metadata
+        Ok(None)
     }
 
     // Note: increment_customer_balance removed

@@ -186,9 +186,16 @@ async fn process_deposit(
 ) -> Result<(), String> {
     let confirmations = current_block.saturating_sub(deposit.block_number) + 1;
 
+    // Get wallet_id and account_id from repository (RocksDB cache)
+    let (wallet_id, account_id) = repository
+        .get_address_metadata(&deposit.address, chain_name)
+        .await
+        .map_err(|e| format!("Failed to get address metadata: {}", e))?
+        .ok_or_else(|| format!("Address metadata not found for {}", deposit.address))?;
+
     info!(
-        "[DEPOSIT] Received {} {} at address {} (tx: {}, block: {}, confirmations: {})",
-        deposit.amount, chain_name, deposit.address, deposit.tx_hash, deposit.block_number, confirmations
+        "[DEPOSIT] Received {} {} at address {} (wallet: {}, account: {:?}, tx: {}, block: {}, confirmations: {})",
+        deposit.amount, chain_name, deposit.address, wallet_id, account_id, deposit.tx_hash, deposit.block_number, confirmations
     );
 
     // Check if deposit already exists in database
@@ -218,6 +225,8 @@ async fn process_deposit(
                 if let Some(notifier) = sqs_notifier {
                     if let Err(e) = notifier.send_deposit_confirmed(
                         deposit.address.clone(),
+                        wallet_id.clone(),
+                        account_id.clone(),
                         chain_name.to_uppercase(),
                         deposit.tx_hash.clone(),
                         deposit.amount.clone(),
@@ -244,6 +253,8 @@ async fn process_deposit(
         // Save to DB with status PENDING
         repository.save_deposit_event(
             &deposit.address,
+            &wallet_id,
+            account_id.as_deref(),
             chain_name,
             &deposit.tx_hash,
             deposit.block_number,
@@ -257,6 +268,8 @@ async fn process_deposit(
         if let Some(notifier) = sqs_notifier {
             if let Err(e) = notifier.send_deposit_detected(
                 deposit.address.clone(),
+                wallet_id.clone(),
+                account_id.clone(),
                 chain_name.to_uppercase(),
                 deposit.tx_hash.clone(),
                 deposit.amount.clone(),

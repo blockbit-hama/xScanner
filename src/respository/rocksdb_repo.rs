@@ -111,6 +111,8 @@ impl Repository for RocksDBRepository {
     async fn save_deposit_event(
         &self,
         address: &str,
+        wallet_id: &str,
+        account_id: Option<&str>,
         chain_name: &str,
         tx_hash: &str,
         block_number: u64,
@@ -127,6 +129,8 @@ impl Repository for RocksDBRepository {
         // DepositEvent를 JSON으로 직렬화하여 저장
         let event = serde_json::json!({
             "address": address,
+            "wallet_id": wallet_id,
+            "account_id": account_id,
             "chain_name": chain_name,
             "tx_hash": tx_hash,
             "block_number": block_number,
@@ -147,12 +151,28 @@ impl Repository for RocksDBRepository {
     async fn save_deposit_event(
         &self,
         _address: &str,
+        _wallet_id: &str,
+        _account_id: Option<&str>,
         _chain_name: &str,
         _tx_hash: &str,
         _block_number: u64,
         _amount: &str,
         _amount_decimal: Option<Decimal>,
     ) -> Result<(), AppError> {
+        Err(AppError::Database("RocksDB feature not enabled".to_string()))
+    }
+
+    #[cfg(feature = "rocksdb-backend")]
+    async fn get_address_metadata(&self, address: &str, chain_name: &str) -> Result<Option<(String, Option<String>)>, AppError> {
+        match crate::respository::get_address_metadata_from_rocksdb(&self.db, address, chain_name) {
+            Ok(Some(metadata)) => Ok(Some((metadata.wallet_id, metadata.account_id))),
+            Ok(None) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    #[cfg(not(feature = "rocksdb-backend"))]
+    async fn get_address_metadata(&self, _address: &str, _chain_name: &str) -> Result<Option<(String, Option<String>)>, AppError> {
         Err(AppError::Database("RocksDB feature not enabled".to_string()))
     }
 

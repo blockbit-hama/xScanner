@@ -7,6 +7,8 @@ use log::{info, error};
 pub enum DepositEvent {
     DepositDetected {
         address: String,
+        wallet_id: String,
+        account_id: Option<String>, // None for Omnibus (Master) Address
         chain: String,
         tx_hash: String,
         amount: String,
@@ -15,6 +17,8 @@ pub enum DepositEvent {
     },
     DepositConfirmed {
         address: String,
+        wallet_id: String,
+        account_id: Option<String>, // None for Omnibus (Master) Address
         chain: String,
         tx_hash: String,
         amount: String,
@@ -61,6 +65,8 @@ impl SqsNotifier {
     pub async fn send_deposit_detected(
         &self,
         address: String,
+        wallet_id: String,
+        account_id: Option<String>,
         chain: String,
         tx_hash: String,
         amount: String,
@@ -68,6 +74,8 @@ impl SqsNotifier {
     ) -> Result<(), String> {
         let event = DepositEvent::DepositDetected {
             address,
+            wallet_id,
+            account_id,
             chain,
             tx_hash,
             amount,
@@ -81,6 +89,8 @@ impl SqsNotifier {
     pub async fn send_deposit_confirmed(
         &self,
         address: String,
+        wallet_id: String,
+        account_id: Option<String>,
         chain: String,
         tx_hash: String,
         amount: String,
@@ -89,6 +99,8 @@ impl SqsNotifier {
     ) -> Result<(), String> {
         let event = DepositEvent::DepositConfirmed {
             address,
+            wallet_id,
+            account_id,
             chain,
             tx_hash,
             amount,

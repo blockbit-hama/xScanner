@@ -11,9 +11,12 @@ use reqwest::Client as HttpClient;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CustomerAddressEvent {
-    pub event: String, // "CustomerAddressAdded"
+    pub event: String, // "AddressAdded"
     pub address: String,
     pub chain: String,
+    pub wallet_id: String,
+    pub account_id: Option<String>, // None for Omnibus (Master) Address
+    pub timestamp: String,
 }
 
 /// Configuration for customer address synchronization
@@ -41,6 +44,8 @@ impl Default for CustomerSyncConfig {
 struct CustomerAddressData {
     address: String,
     chain: String,
+    wallet_id: String,
+    account_id: Option<String>,
 }
 
 /// Run customer address synchronization from SQS
@@ -146,7 +151,7 @@ pub async fn run_customer_address_sync(
 
     // Batch Writer Task
     tokio::spawn(async move {
-        let mut buffer: Vec<(String, String)> = Vec::with_capacity(config.batch_size);
+        let mut buffer: Vec<(String, String, String, Option<String>)> = Vec::with_capacity(config.batch_size);
         let mut flush_interval = interval(Duration::from_secs(config.flush_interval_secs));
         flush_interval.tick().await; // Skip first immediate tick
 
@@ -156,10 +161,15 @@ pub async fn run_customer_address_sync(
             tokio::select! {
                 // New event received
                 Some(event) = receiver.recv() => {
-                    buffer.push((event.address.clone(), event.chain.clone()));
+                    buffer.push((
+                        event.address.clone(),
+                        event.chain.clone(),
+                        event.wallet_id.clone(),
+                        event.account_id.clone(),
+                    ));
                     info!(
-                        "[CustomerSync] Buffered: {} (chain: {}) | Buffer size: {}/{}",
-                        event.address, event.chain, buffer.len(), config.batch_size
+                        "[CustomerSync] Buffered: {} (chain: {}, wallet: {}, account: {:?}) | Buffer size: {}/{}",
+                        event.address, event.chain, event.wallet_id, event.account_id, buffer.len(), config.batch_size
                     );
 
                     // Flush when batch size reached
@@ -181,7 +191,7 @@ pub async fn run_customer_address_sync(
     });
 }
 
-async fn flush_batch(rocksdb: &Arc<DB>, buffer: &mut Vec<(String, String)>) {
+async fn flush_batch(rocksdb: &Arc<DB>, buffer: &mut Vec<(String, String, String, Option<String>)>) {
     if buffer.is_empty() {
         return;
     }
@@ -227,9 +237,9 @@ async fn load_addresses_from_file(
     }
 
     // Convert to batch format
-    let batch_data: Vec<(String, String)> = addresses
+    let batch_data: Vec<(String, String, String, Option<String>)> = addresses
         .into_iter()
-        .map(|addr| (addr.address, addr.chain))
+        .map(|addr| (addr.address, addr.chain, addr.wallet_id, addr.account_id))
         .collect();
 
     let count = batch_data.len();

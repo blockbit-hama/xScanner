@@ -67,6 +67,8 @@ impl Repository for RepositoryWrapper {
     async fn save_deposit_event(
         &self,
         address: &str,
+        wallet_id: &str,
+        account_id: Option<&str>,
         chain_name: &str,
         tx_hash: &str,
         block_number: u64,
@@ -74,8 +76,15 @@ impl Repository for RepositoryWrapper {
         amount_decimal: Option<rust_decimal::Decimal>,
     ) -> Result<(), AppError> {
         match self {
-            RepositoryWrapper::Memory(r) => r.save_deposit_event(address, chain_name, tx_hash, block_number, amount, amount_decimal).await,
-            RepositoryWrapper::PostgreSQL(r) => r.save_deposit_event(address, chain_name, tx_hash, block_number, amount, amount_decimal).await,
+            RepositoryWrapper::Memory(r) => r.save_deposit_event(address, wallet_id, account_id, chain_name, tx_hash, block_number, amount, amount_decimal).await,
+            RepositoryWrapper::PostgreSQL(r) => r.save_deposit_event(address, wallet_id, account_id, chain_name, tx_hash, block_number, amount, amount_decimal).await,
+        }
+    }
+
+    async fn get_address_metadata(&self, address: &str, chain_name: &str) -> Result<Option<(String, Option<String>)>, AppError> {
+        match self {
+            RepositoryWrapper::Memory(r) => r.get_address_metadata(address, chain_name).await,
+            RepositoryWrapper::PostgreSQL(r) => r.get_address_metadata(address, chain_name).await,
         }
     }
 

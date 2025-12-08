@@ -51,7 +51,11 @@ pub use rocksdb::add_monitored_address_to_rocksdb;
 #[cfg(feature = "rocksdb-backend")]
 pub use rocksdb::is_monitored_address_in_rocksdb;
 #[cfg(feature = "rocksdb-backend")]
+pub use rocksdb::get_address_metadata_from_rocksdb;
+#[cfg(feature = "rocksdb-backend")]
 pub use rocksdb::batch_add_monitored_addresses;
+#[cfg(feature = "rocksdb-backend")]
+pub use rocksdb::AddressMetadata;
 // Deprecated exports for backward compatibility
 #[cfg(feature = "rocksdb-backend")]
 #[allow(deprecated)]

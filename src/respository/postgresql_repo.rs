@@ -46,6 +46,8 @@ impl Repository for PostgreSQLRepository {
     async fn save_deposit_event(
         &self,
         address: &str,
+        wallet_id: &str,
+        account_id: Option<&str>,
         chain_name: &str,
         tx_hash: &str,
         block_number: u64,
@@ -55,12 +57,20 @@ impl Repository for PostgreSQLRepository {
         crate::respository::postgresql::save_deposit_event(
             &self.pool,
             address,
+            wallet_id,
+            account_id,
             chain_name,
             tx_hash,
             block_number,
             amount,
             amount_decimal,
         ).await
+    }
+
+    async fn get_address_metadata(&self, _address: &str, _chain_name: &str) -> Result<Option<(String, Option<String>)>, AppError> {
+        // PostgreSQL repository doesn't store address metadata
+        // All address metadata lookups are done via RocksDB cache
+        Ok(None)
     }
 
     // Note: increment_customer_balance removed

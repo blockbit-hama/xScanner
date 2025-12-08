@@ -78,20 +78,60 @@ xScanner는 다중 블록체인을 모니터링하여 고객 주소로의 입금
 - `customer_addresses` - 고객 주소 매핑 (Single Source of Truth)
 - `customer_balances` - 고객 잔액 (Single Source of Truth)
 
+### Custody Wallet Address Structure (Custody Wallet 주소 구조)
+
+xScanner는 두 가지 유형의 주소를 모니터링합니다:
+
+```
+Omnibus (Master) Address: 0xMASTER...
+├─ 역할: 집금 계좌 (모든 자금이 모이는 곳)
+├─ 입금 시나리오:
+│   1. 자식 주소들에서 자동 집금 (sweep) ← 메인 시나리오
+│   2. UI에서 "입금" 버튼으로 직접 입금 가능 ← 존재는 함
+│
+└─ Virtual Accounts (자식 주소들): 0x111..., 0x222..., 0x333...
+    ├─ 역할: 은행 고객들에게 할당된 입금 전용 주소
+    └─ 입금 감지 필요 ✅ (고객 입금 → 자동 집금)
+```
+
+**xScanner가 모니터링해야 할 주소**:
+1. **Virtual Account 주소들** ✅ 필수
+   - 은행 고객의 입금을 감지해야 함
+   - `account_id` 있음 (고객 식별)
+   - 감지 시 Backend에 알림 → 자동 집금 트리거
+
+2. **Omnibus Address** ✅ 필요
+   - 직접 입금은 드물지만 UI에서 가능
+   - `account_id` 없음 (null) - Master 주소 표시
+
+**Address Metadata (주소 메타데이터)**:
+- `wallet_id`: Custody Wallet 식별자
+- `account_id`: Virtual Account ID (Omnibus는 null)
+
 ### Customer Address Sync (고객 주소 동기화)
 
 xScanner는 고객 주소를 **Backend로부터 실시간 동기화**합니다:
 
 ```
-Backend (고객 가입)
+Backend (고객 주소 추가)
    ↓
 customer_addresses 테이블에 INSERT
    ↓
-SQS 메시지 발송 (CustomerAddressAdded)
+SQS 메시지 발송 (AddressAdded)
+   {
+     "event": "AddressAdded",
+     "address": "0x123...",
+     "wallet_id": "wallet_uuid",
+     "account_id": "account_uuid" (or null for Omnibus),
+     "chain": "ETH",
+     "timestamp": "2025-12-08T..."
+   }
    ↓
 xScanner (SQS Consumer)
    ↓
 RocksDB 캐시 업데이트 (배치 100개 or 5초마다)
+   Key: "eth:0x123..."
+   Value: {"wallet_id": "...", "account_id": "..." or null}
 ```
 
 **다운타임 대응**:

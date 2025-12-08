@@ -36,12 +36,14 @@ pub async fn setup_db_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
   // Customer addresses are managed by blockbit-back-custody (Backend)
   // xScanner receives address updates via SQS and caches them in RocksDB only
   
-  // 입금 이벤트 테이블 (customer_id 제거됨)
+  // 입금 이벤트 테이블 (wallet_id, account_id 추가)
   sqlx::query(&format!(
     r#"
         CREATE TABLE IF NOT EXISTS {} (
             id SERIAL PRIMARY KEY,
             address VARCHAR(255) NOT NULL,
+            wallet_id VARCHAR(255) NOT NULL,
+            account_id VARCHAR(255),
             chain_name VARCHAR(50) NOT NULL,
             tx_hash VARCHAR(255) NOT NULL,
             block_number BIGINT NOT NULL,
@@ -139,10 +141,12 @@ pub async fn init_last_processed_block(
 // xScanner no longer queries customer addresses from PostgreSQL
 // All address lookups are done via RocksDB cache (populated from Backend via SQS)
 
-// 입금 이벤트 저장 (customer_id 제거됨)
+// 입금 이벤트 저장 (wallet_id, account_id 추가)
 pub async fn save_deposit_event(
   pool: &PgPool,
   address: &str,
+  wallet_id: &str,
+  account_id: Option<&str>,
   chain_name: &str,
   tx_hash: &str,
   block_number: u64,
@@ -151,8 +155,8 @@ pub async fn save_deposit_event(
 ) -> Result<(), AppError> {
   let query = format!(
     r#"
-        INSERT INTO {} (address, chain_name, tx_hash, block_number, amount, amount_decimal)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO {} (address, wallet_id, account_id, chain_name, tx_hash, block_number, amount, amount_decimal)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (chain_name, tx_hash) DO NOTHING
         "#,
     DEPOSIT_EVENTS_TABLE
@@ -166,6 +170,8 @@ pub async fn save_deposit_event(
 
   sqlx::query(&query)
     .bind(address)
+    .bind(wallet_id)
+    .bind(account_id)
     .bind(chain_name)
     .bind(tx_hash)
     .bind(block_number as i64)

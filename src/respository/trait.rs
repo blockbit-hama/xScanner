@@ -17,16 +17,21 @@ pub trait Repository: Send + Sync {
     /// 주소가 관리 대상인지 확인 (RocksDB 캐시 조회용)
     async fn is_monitored_address(&self, address: &str, chain_name: &str) -> Result<bool, AppError>;
 
-    /// 입금 이벤트 저장 (customer_id 제거됨)
+    /// 입금 이벤트 저장 (wallet_id, account_id 추가)
     async fn save_deposit_event(
         &self,
         address: &str,
+        wallet_id: &str,
+        account_id: Option<&str>,
         chain_name: &str,
         tx_hash: &str,
         block_number: u64,
         amount: &str,
         amount_decimal: Option<Decimal>,
     ) -> Result<(), AppError>;
+
+    /// 주소의 메타데이터 조회 (wallet_id, account_id)
+    async fn get_address_metadata(&self, address: &str, chain_name: &str) -> Result<Option<(String, Option<String>)>, AppError>;
 
     // Note: increment_customer_balance removed
     // Balance management is handled by blockbit-back-custody, not xScanner
