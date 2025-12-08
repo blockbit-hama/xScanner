@@ -13,6 +13,7 @@ mod respository;
 mod analyzer;
 mod shutdown;
 mod tasks;
+mod notification;
 
 use crate::coin::bitcoin::client::BitcoinClient;
 use crate::coin::ethereum::client::EthereumClient;
@@ -32,6 +33,7 @@ use crate::respository::{
     RepositoryWrapper,
 };
 use crate::analyzer::analyzer::KeyValueDB;
+use crate::notification::sqs_client::SqsNotifier;
 
 #[cfg(feature = "leveldb-backend")]
 use crate::respository::{load_customer_addresses_to_leveldb, open_leveldb, batch_add_customer_addresses as leveldb_batch_add};
@@ -208,18 +210,40 @@ async fn main() -> Result<(), AppError> {
         fetcher_handles.push(handle);
     }
     
-    // 7. Spawn analyzer
+    // 7. Initialize SQS Notifier (if configured)
+    let sqs_notifier = if let Some(notification_config) = &settings.notification {
+        match SqsNotifier::new(
+            notification_config.sqs_queue_url.clone(),
+            notification_config.aws_region.clone(),
+        ).await {
+            Ok(notifier) => {
+                info!("SQS Notifier initialized: {}", notification_config.sqs_queue_url);
+                Some(Arc::new(notifier))
+            }
+            Err(e) => {
+                warn!("Failed to initialize SQS Notifier: {}", e);
+                None
+            }
+        }
+    } else {
+        info!("SQS Notifier not configured, skipping");
+        None
+    };
+
+    // 8. Spawn analyzer
     let analyzer_handle = tokio::spawn(analyzer::run_analyzer(
         receiver,
         repository.clone(),
         kv_db,
+        sqs_notifier,
+        settings.get_chain_configs().into_iter().collect(),
     ));
     
-    // 8. Wait for shutdown signal
+    // 9. Wait for shutdown signal
     shutdown_signal().await;
     info!("Shutdown signal received. Waiting for tasks to finish...");
-    
-    // 9. Gracefully wait for all fetchers
+
+    // 10. Gracefully wait for all fetchers
     for handle in fetcher_handles {
         let _ = handle.await;
     }

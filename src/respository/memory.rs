@@ -33,6 +33,7 @@ struct DepositEvent {
     block_number: u64,
     amount: String,
     amount_decimal: Option<Decimal>,
+    confirmed: bool,
 }
 
 impl MemoryRepository {
@@ -112,6 +113,7 @@ impl Repository for MemoryRepository {
             block_number,
             amount: amount.to_string(),
             amount_decimal,
+            confirmed: false,
         });
         
         Ok(())
@@ -142,6 +144,42 @@ impl Repository for MemoryRepository {
         
         warn!("MemoryRepository: load_customer_addresses called for {}, found {} addresses", chain_name, count);
         Ok(count)
+    }
+
+    async fn deposit_exists(&self, tx_hash: &str, chain_name: &str) -> Result<bool, AppError> {
+        let events = self.deposit_events.read().await;
+        let key = (chain_name.to_string(), tx_hash.to_string());
+        Ok(events.contains_key(&key))
+    }
+
+    async fn is_deposit_confirmed(&self, tx_hash: &str) -> Result<bool, AppError> {
+        let events = self.deposit_events.read().await;
+
+        // Find the deposit event by tx_hash (search across all chains)
+        for ((_, hash), event) in events.iter() {
+            if hash == tx_hash {
+                return Ok(event.confirmed);
+            }
+        }
+
+        Ok(false)
+    }
+}
+
+// Helper function to update deposit confirmation status for MemoryRepository
+impl MemoryRepository {
+    pub async fn update_deposit_confirmed(&self, tx_hash: &str) -> Result<(), AppError> {
+        let mut events = self.deposit_events.write().await;
+
+        // Find and update the deposit event
+        for ((_, hash), event) in events.iter_mut() {
+            if hash == tx_hash {
+                event.confirmed = true;
+                return Ok(());
+            }
+        }
+
+        Err(AppError::Database(format!("Deposit not found: {}", tx_hash)))
     }
 }
 

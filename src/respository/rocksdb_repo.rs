@@ -203,4 +203,48 @@ impl Repository for RocksDBRepository {
         info!("RocksDBRepository: load_customer_addresses called for {}, but counting addresses requires iteration", chain_name);
         Ok(0) // 주소 개수를 세려면 반복이 필요하므로 0 반환
     }
+
+    #[cfg(feature = "rocksdb-backend")]
+    async fn deposit_exists(&self, tx_hash: &str, chain_name: &str) -> Result<bool, AppError> {
+        let key = format!("deposit:{}:{}", chain_name, tx_hash);
+        match self.db.get(key.as_bytes()) {
+            Ok(Some(_)) => Ok(true),
+            Ok(None) => Ok(false),
+            Err(e) => Err(AppError::Database(format!("RocksDB get failed: {}", e))),
+        }
+    }
+
+    #[cfg(not(feature = "rocksdb-backend"))]
+    async fn deposit_exists(&self, _tx_hash: &str, _chain_name: &str) -> Result<bool, AppError> {
+        Err(AppError::Database("RocksDB feature not enabled".to_string()))
+    }
+
+    #[cfg(feature = "rocksdb-backend")]
+    async fn is_deposit_confirmed(&self, tx_hash: &str) -> Result<bool, AppError> {
+        let key = format!("deposit_confirmed:{}", tx_hash);
+        match self.db.get(key.as_bytes()) {
+            Ok(Some(value)) => {
+                let confirmed_str = String::from_utf8(value.to_vec())
+                    .map_err(|e| AppError::Database(format!("Invalid UTF-8: {}", e)))?;
+                Ok(confirmed_str == "true")
+            }
+            Ok(None) => Ok(false),
+            Err(e) => Err(AppError::Database(format!("RocksDB get failed: {}", e))),
+        }
+    }
+
+    #[cfg(not(feature = "rocksdb-backend"))]
+    async fn is_deposit_confirmed(&self, _tx_hash: &str) -> Result<bool, AppError> {
+        Err(AppError::Database("RocksDB feature not enabled".to_string()))
+    }
+}
+
+#[cfg(feature = "rocksdb-backend")]
+impl RocksDBRepository {
+    pub async fn update_deposit_confirmed(&self, tx_hash: &str) -> Result<(), AppError> {
+        let key = format!("deposit_confirmed:{}", tx_hash);
+        self.db.put(key.as_bytes(), b"true")
+            .map_err(|e| AppError::Database(format!("RocksDB put failed: {}", e)))?;
+        Ok(())
+    }
 }

@@ -317,7 +317,66 @@ pub async fn load_customer_addresses_to_rocksdb(
   
   rocksdb.write(batch)
     .map_err(|e| AppError::Database(format!("Failed to write to RocksDB: {}", e)))?;
-  
+
   Ok(count)
+}
+
+// Check if a deposit already exists in the database
+pub async fn deposit_exists(
+  pool: &PgPool,
+  tx_hash: &str,
+  chain_name: &str,
+) -> Result<bool, AppError> {
+  let query = format!(
+    "SELECT EXISTS(SELECT 1 FROM {} WHERE tx_hash = $1 AND chain_name = $2)",
+    DEPOSIT_EVENTS_TABLE
+  );
+
+  let row: (bool,) = sqlx::query_as(&query)
+    .bind(tx_hash)
+    .bind(chain_name)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| AppError::Database(format!("Failed to check deposit existence: {}", e)))?;
+
+  Ok(row.0)
+}
+
+// Check if a deposit is already confirmed
+pub async fn is_deposit_confirmed(
+  pool: &PgPool,
+  tx_hash: &str,
+) -> Result<bool, AppError> {
+  let query = format!(
+    "SELECT confirmed FROM {} WHERE tx_hash = $1",
+    DEPOSIT_EVENTS_TABLE
+  );
+
+  let row: Option<(bool,)> = sqlx::query_as(&query)
+    .bind(tx_hash)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| AppError::Database(format!("Failed to check deposit confirmation status: {}", e)))?;
+
+  Ok(row.map(|(confirmed,)| confirmed).unwrap_or(false))
+}
+
+// Update deposit confirmation status
+pub async fn update_deposit_confirmed(
+  pool: &PgPool,
+  tx_hash: &str,
+) -> Result<(), AppError> {
+  let query = format!(
+    "UPDATE {} SET confirmed = TRUE WHERE tx_hash = $1",
+    DEPOSIT_EVENTS_TABLE
+  );
+
+  sqlx::query(&query)
+    .bind(tx_hash)
+    .execute(pool)
+    .await
+    .map_err(|e| AppError::Database(format!("Failed to update deposit confirmation: {}", e)))?;
+
+  Ok(())
 }
 

@@ -98,4 +98,43 @@ impl Repository for RepositoryWrapper {
             RepositoryWrapper::PostgreSQL(r) => r.load_customer_addresses(chain_name).await,
         }
     }
+
+    async fn deposit_exists(&self, tx_hash: &str, chain_name: &str) -> Result<bool, AppError> {
+        match self {
+            RepositoryWrapper::Memory(r) => r.deposit_exists(tx_hash, chain_name).await,
+            RepositoryWrapper::PostgreSQL(r) => r.deposit_exists(tx_hash, chain_name).await,
+        }
+    }
+
+    async fn is_deposit_confirmed(&self, tx_hash: &str) -> Result<bool, AppError> {
+        match self {
+            RepositoryWrapper::Memory(r) => r.is_deposit_confirmed(tx_hash).await,
+            RepositoryWrapper::PostgreSQL(r) => r.is_deposit_confirmed(tx_hash).await,
+        }
+    }
+}
+
+impl RepositoryWrapper {
+    /// Update deposit confirmation status
+    pub async fn update_deposit_confirmed(&self, tx_hash: &str) -> Result<(), AppError> {
+        match self {
+            RepositoryWrapper::Memory(r) => r.update_deposit_confirmed(tx_hash).await,
+            RepositoryWrapper::PostgreSQL(_) => {
+                // For PostgreSQL, use the postgresql module function
+                if let Some(pg_repo) = self.get_postgresql_repo() {
+                    crate::respository::postgresql::update_deposit_confirmed(pg_repo.pool(), tx_hash).await
+                } else {
+                    Err(AppError::Database("PostgreSQL repository not available".to_string()))
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "rocksdb-backend")]
+    pub fn get_rocksdb_repo(&self) -> Option<Arc<crate::respository::RocksDBRepository>> {
+        match self {
+            RepositoryWrapper::PostgreSQL(_) => None,
+            RepositoryWrapper::Memory(_) => None,
+        }
+    }
 }

@@ -1,6 +1,9 @@
 use crate::respository::Repository;
 use crate::respository::RepositoryWrapper;
+use crate::config::ChainConfig;
+use crate::notification::sqs_client::SqsNotifier;
 use std::sync::Arc;
+use std::collections::HashMap;
 use log::{error, info, warn};
 use tokio::sync::mpsc::Receiver;
 use rust_decimal::Decimal;
@@ -40,6 +43,8 @@ pub async fn run_analyzer(
   mut receiver: Receiver<BlockData>,
   repository: Arc<RepositoryWrapper>,
   kv_db: Option<Arc<KeyValueDB>>,
+  sqs_notifier: Option<Arc<SqsNotifier>>,
+  chain_configs: HashMap<String, ChainConfig>,
 ) {
   info!("[Analyzer] Starting loop...");
 
@@ -47,6 +52,7 @@ pub async fn run_analyzer(
     info!("[Analyzer] 블록 데이터 수신! 분석 시작...");
     let repository_clone = repository.clone();
     let kv_db_clone = kv_db.clone();
+    let sqs_clone = sqs_notifier.clone();
 
     // 블록 분석 및 고객 주소 매칭 (KeyValueDB 또는 Repository 사용)
     let result = analyze_block(block_data, &repository_clone, kv_db_clone.as_deref()).await;
@@ -58,9 +64,22 @@ pub async fn run_analyzer(
           chain_name, block_number, deposits.len()
         );
 
+        // Get chain config for required confirmations
+        let required_confirmations = chain_configs.get(&chain_name.to_uppercase())
+          .or_else(|| chain_configs.get(&chain_name.to_lowercase()))
+          .map(|c| c.required_confirmations)
+          .unwrap_or(12); // Default to 12 if not found
+
         // ?? ??
         for deposit in deposits {
-          if let Err(e) = process_deposit(&repository_clone, &chain_name, deposit).await {
+          if let Err(e) = process_deposit(
+            &repository_clone,
+            &chain_name,
+            deposit,
+            block_number,
+            required_confirmations,
+            sqs_clone.as_deref(),
+          ).await {
             error!("[Analyzer] Failed to process deposit: {}", e);
           }
         }
@@ -78,7 +97,7 @@ pub async fn run_analyzer(
       }
     }
   }
-  
+
   info!("[Analyzer] Loop finished because the channel was closed.");
 }
 
@@ -428,42 +447,110 @@ async fn process_deposit(
   repository: &Arc<RepositoryWrapper>,
   chain_name: &str,
   deposit: DepositInfo,
+  current_block: u64,
+  required_confirmations: u64,
+  sqs_notifier: Option<&SqsNotifier>,
 ) -> Result<(), String> {
+  let confirmations = current_block.saturating_sub(deposit.block_number) + 1;
+
   info!(
-    "[DEPOSIT] Customer {} received {} {} at address {} (tx: {}, block: {})",
-    deposit.customer_id, deposit.amount, chain_name, deposit.address, deposit.tx_hash, deposit.block_number
+    "[DEPOSIT] Customer {} received {} {} at address {} (tx: {}, block: {}, confirmations: {})",
+    deposit.customer_id, deposit.amount, chain_name, deposit.address, deposit.tx_hash, deposit.block_number, confirmations
   );
-  
-  // ?? ??? ??
-  repository.save_deposit_event(
-    &deposit.customer_id,
-    &deposit.address,
-    chain_name,
-    &deposit.tx_hash,
-    deposit.block_number,
-    &deposit.amount,
-    deposit.amount_decimal,
-  )
-  .await
-  .map_err(|e| format!("Failed to save deposit event: {}", e))?;
-  
-  // ?? ?? ??
-  if let Some(amount_decimal) = deposit.amount_decimal {
-    repository.increment_customer_balance(&deposit.customer_id, chain_name, amount_decimal)
-      .await
-      .map_err(|e| format!("Failed to update balance: {}", e))?;
-    
-    info!(
-      "[DEPOSIT] Updated balance for customer {}: +{} {}",
-      deposit.customer_id, amount_decimal, chain_name
-    );
-  } else {
-    warn!(
-      "[DEPOSIT] Could not parse amount for deposit: {}",
-      deposit.amount
-    );
+
+  // Check if deposit already exists in database
+  let already_exists = repository
+    .deposit_exists(&deposit.tx_hash, chain_name)
+    .await
+    .map_err(|e| format!("Failed to check deposit existence: {}", e))?;
+
+  if already_exists {
+    // Deposit already processed in Stage 1, only check Stage 2
+    if confirmations >= required_confirmations {
+      // Check if already confirmed to prevent duplicate notifications
+      let is_confirmed = repository
+        .is_deposit_confirmed(&deposit.tx_hash)
+        .await
+        .map_err(|e| format!("Failed to check confirmation status: {}", e))?;
+
+      if !is_confirmed {
+        info!("[DEPOSIT_CONFIRMED] {} confirmations reached (required: {}), sending confirmation", confirmations, required_confirmations);
+
+        // Update customer balance
+        if let Some(amount_decimal) = deposit.amount_decimal {
+          repository.increment_customer_balance(&deposit.customer_id, chain_name, amount_decimal)
+            .await
+            .map_err(|e| format!("Failed to update balance: {}", e))?;
+
+          info!(
+            "[DEPOSIT_CONFIRMED] Updated balance for customer {}: +{} {}",
+            deposit.customer_id, amount_decimal, chain_name
+          );
+        }
+
+        // Update deposit confirmed status
+        repository.update_deposit_confirmed(&deposit.tx_hash)
+          .await
+          .map_err(|e| format!("Failed to update deposit confirmation: {}", e))?;
+
+        // Send SQS notification
+        if let Some(notifier) = sqs_notifier {
+          if let Err(e) = notifier.send_deposit_confirmed(
+            deposit.customer_id.clone(),
+            deposit.address.clone(),
+            chain_name.to_uppercase(),
+            deposit.tx_hash.clone(),
+            deposit.amount.clone(),
+            deposit.block_number,
+            confirmations,
+          ).await {
+            error!("[DEPOSIT_CONFIRMED] Failed to send SQS: {}", e);
+          } else {
+            info!("[DEPOSIT_CONFIRMED] ✅ SQS notification sent");
+          }
+        }
+      } else {
+        // Already confirmed, skip
+        return Ok(());
+      }
+    }
+    return Ok(());
   }
-  
+
+  // New deposit - Stage 1: DEPOSIT_DETECTED (1 confirmation)
+  if confirmations == 1 {
+    info!("[DEPOSIT_DETECTED] {} confirmations reached for tx {}", confirmations, deposit.tx_hash);
+
+    // Save to DB with status PENDING
+    repository.save_deposit_event(
+      &deposit.customer_id,
+      &deposit.address,
+      chain_name,
+      &deposit.tx_hash,
+      deposit.block_number,
+      &deposit.amount,
+      deposit.amount_decimal,
+    )
+    .await
+    .map_err(|e| format!("Failed to save deposit event: {}", e))?;
+
+    // Send SQS notification
+    if let Some(notifier) = sqs_notifier {
+      if let Err(e) = notifier.send_deposit_detected(
+        deposit.customer_id.clone(),
+        deposit.address.clone(),
+        chain_name.to_uppercase(),
+        deposit.tx_hash.clone(),
+        deposit.amount.clone(),
+        deposit.block_number,
+      ).await {
+        error!("[DEPOSIT_DETECTED] Failed to send SQS: {}", e);
+      } else {
+        info!("[DEPOSIT_DETECTED] ✅ SQS notification sent");
+      }
+    }
+  }
+
   Ok(())
 }
 

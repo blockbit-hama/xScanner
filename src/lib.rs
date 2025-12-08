@@ -8,3 +8,4 @@
 pub mod coin;
 pub mod fetcher;
 pub mod types;
+pub mod notification;

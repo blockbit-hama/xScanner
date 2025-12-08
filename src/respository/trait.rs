@@ -39,4 +39,10 @@ pub trait Repository: Send + Sync {
     
     /// ?? ???? ?? (????)
     async fn load_customer_addresses(&self, chain_name: &str) -> Result<usize, AppError>;
+
+    /// Check if a deposit already exists in the database
+    async fn deposit_exists(&self, tx_hash: &str, chain_name: &str) -> Result<bool, AppError>;
+
+    /// Check if a deposit is already confirmed
+    async fn is_deposit_confirmed(&self, tx_hash: &str) -> Result<bool, AppError>;
 }

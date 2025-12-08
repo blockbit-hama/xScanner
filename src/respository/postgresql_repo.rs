@@ -96,4 +96,12 @@ impl Repository for PostgreSQLRepository {
         
         Ok(count as usize)
     }
+
+    async fn deposit_exists(&self, tx_hash: &str, chain_name: &str) -> Result<bool, AppError> {
+        crate::respository::postgresql::deposit_exists(&self.pool, tx_hash, chain_name).await
+    }
+
+    async fn is_deposit_confirmed(&self, tx_hash: &str) -> Result<bool, AppError> {
+        crate::respository::postgresql::is_deposit_confirmed(&self.pool, tx_hash).await
+    }
 }

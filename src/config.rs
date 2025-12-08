@@ -6,6 +6,8 @@ pub struct Settings {
   #[serde(default)]
   pub blockchain: BlockchainSettings,
   pub repository: RepositorySettings,
+  #[serde(default)]
+  pub notification: Option<NotificationSettings>,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -28,10 +30,22 @@ pub struct ChainConfig {
   pub symbol: String,
   pub start_block: u64,
   pub interval_secs: u64,
+  #[serde(default = "default_required_confirmations")]
+  pub required_confirmations: u64,
   #[serde(default)]
   pub rpc_method: Option<String>, // "eth_getBlockByNumber", "getblock" ?
   #[serde(default)]
   pub rpc_params_format: Option<String>, // "hex", "decimal", "string"
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct NotificationSettings {
+  pub sqs_queue_url: String,
+  pub aws_region: String,
+}
+
+fn default_required_confirmations() -> u64 {
+  12 // Default to Ethereum's 12 confirmations
 }
 
 #[derive(Debug, Deserialize, Clone)]

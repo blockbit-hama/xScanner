@@ -4,9 +4,14 @@ api = "https://mainnet.infura.io/v3/51d1d5bfaeab44fc87d77cf298d7c591"
 symbol = "eth"
 start_block = 23695633
 interval_secs = 5
+required_confirmations = 12
 
 [repository]
 memory_db = true
 postgresql_url = "postgres://dummy:dummy@localhost:5432/dummy"
 leveldb_path = "./dummy_db"
 customer_address_file = "./customer_addresses.txt"
+
+[notification]
+sqs_queue_url = "https://sqs.ap-northeast-2.amazonaws.com/YOUR_ACCOUNT_ID/deposit-events"
+aws_region = "ap-northeast-2"
