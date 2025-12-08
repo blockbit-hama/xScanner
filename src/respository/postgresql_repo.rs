@@ -36,13 +36,15 @@ impl Repository for PostgreSQLRepository {
         crate::respository::postgresql::init_last_processed_block(&self.pool, chain, initial_block).await
     }
     
-    async fn get_customer_id_by_address(&self, address: &str, chain_name: &str) -> Result<Option<String>, AppError> {
-        crate::respository::postgresql::get_customer_id_by_address(&self.pool, address, chain_name).await
+    async fn is_monitored_address(&self, _address: &str, _chain_name: &str) -> Result<bool, AppError> {
+        // Note: This function is no longer used in PostgreSQL repository
+        // All address lookups are done via RocksDB cache
+        // (populated from Backend via SQS + optional file cache)
+        Ok(false)
     }
-    
+
     async fn save_deposit_event(
         &self,
-        customer_id: &str,
         address: &str,
         chain_name: &str,
         tx_hash: &str,
@@ -52,7 +54,6 @@ impl Repository for PostgreSQLRepository {
     ) -> Result<(), AppError> {
         crate::respository::postgresql::save_deposit_event(
             &self.pool,
-            customer_id,
             address,
             chain_name,
             tx_hash,
@@ -61,21 +62,10 @@ impl Repository for PostgreSQLRepository {
             amount_decimal,
         ).await
     }
-    
-    async fn increment_customer_balance(
-        &self,
-        customer_id: &str,
-        chain_name: &str,
-        amount: Decimal,
-    ) -> Result<(), AppError> {
-        crate::respository::postgresql::increment_customer_balance(
-            &self.pool,
-            customer_id,
-            chain_name,
-            amount,
-        ).await
-    }
-    
+
+    // Note: increment_customer_balance removed
+    // Balance management is handled by blockbit-back-custody, not xScanner
+
     async fn load_customer_addresses(&self, chain_name: &str) -> Result<usize, AppError> {
         // PostgreSQL??? ???? LevelDB? ???? ??? ???,
         // ???? ?? ??? ??

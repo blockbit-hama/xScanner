@@ -36,17 +36,17 @@ use crate::analyzer::analyzer::KeyValueDB;
 use crate::notification::sqs_client::SqsNotifier;
 
 #[cfg(feature = "leveldb-backend")]
-use crate::respository::{load_customer_addresses_to_leveldb, open_leveldb, batch_add_customer_addresses as leveldb_batch_add};
+use crate::respository::open_leveldb;
 
 #[cfg(feature = "rocksdb-backend")]
-use crate::respository::{open_rocksdb, batch_add_customer_addresses as rocksdb_batch_add};
+use crate::respository::open_rocksdb;
 use crate::shutdown::shutdown_signal;
-use crate::tasks::spawn_fetcher;
 
 use log::{error, info, warn};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use tokio::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
@@ -72,27 +72,7 @@ async fn main() -> Result<(), AppError> {
         {
             let db = Arc::new(open_leveldb(&settings.repository.leveldb_path)?);
             info!("Opened LevelDB for customer address caching.");
-
-            // Load customer addresses from PostgreSQL to LevelDB
-            if let Some(pg_repo) = repository.get_postgresql_repo() {
-                let chain_configs = settings.get_chain_configs();
-                for (chain_name, _chain_config) in &chain_configs {
-                    let chain_symbol = chain_name.to_uppercase();
-                    match load_customer_addresses_to_leveldb(
-                        pg_repo.pool(),
-                        &db,
-                        &chain_symbol,
-                    ).await {
-                        Ok(count) => {
-                            info!("Loaded {} customer addresses for {} from PostgreSQL to LevelDB cache", count, chain_symbol);
-                        }
-                        Err(e) => {
-                            warn!("Failed to load customer addresses for {}: {}", chain_symbol, e);
-                        }
-                    }
-                }
-            }
-
+            info!("Note: Customer addresses will be loaded via SQS sync + optional cache file");
             Some(db)
         }
 
@@ -100,28 +80,7 @@ async fn main() -> Result<(), AppError> {
         {
             let db = Arc::new(open_rocksdb(&settings.repository.leveldb_path)?);
             info!("Opened RocksDB for customer address caching.");
-
-            // Load customer addresses from PostgreSQL to RocksDB
-            if let Some(pg_repo) = repository.get_postgresql_repo() {
-                use crate::respository::load_customer_addresses_to_rocksdb;
-                let chain_configs = settings.get_chain_configs();
-                for (chain_name, _chain_config) in &chain_configs {
-                    let chain_symbol = chain_name.to_uppercase();
-                    match load_customer_addresses_to_rocksdb(
-                        pg_repo.pool(),
-                        &db,
-                        &chain_symbol,
-                    ).await {
-                        Ok(count) => {
-                            info!("Loaded {} customer addresses for {} from PostgreSQL to RocksDB cache", count, chain_symbol);
-                        }
-                        Err(e) => {
-                            warn!("Failed to load customer addresses for {}: {}", chain_symbol, e);
-                        }
-                    }
-                }
-            }
-
+            info!("Note: Customer addresses will be loaded via SQS sync + optional cache file");
             Some(db)
         }
 
@@ -174,32 +133,34 @@ async fn main() -> Result<(), AppError> {
         
         info!("Initializing {} scanner from block {}", chain_name, start_block);
         
+        let interval_duration = Duration::from_secs(chain_config.interval_secs);
+
         // Spawn fetcher based on chain name
         let handle = match chain_name.to_lowercase().as_str() {
             "ethereum" | "eth" => {
                 let client = Arc::new(EthereumClient::new(chain_config.api.clone()));
                 let fetcher = Arc::new(EthereumFetcher { client });
-                spawn_fetcher(fetcher, sender_clone, start_block, chain_config.interval_secs)
+                tokio::spawn(crate::fetcher::runner::run_fetcher(fetcher, sender_clone, start_block, interval_duration))
             }
             "bitcoin" | "btc" => {
                 let client = Arc::new(BitcoinClient::new(chain_config.api.clone()));
                 let fetcher = Arc::new(BitcoinFetcher { client });
-                spawn_fetcher(fetcher, sender_clone, start_block, chain_config.interval_secs)
+                tokio::spawn(crate::fetcher::runner::run_fetcher(fetcher, sender_clone, start_block, interval_duration))
             }
             "tron" => {
                 let client = Arc::new(TronClient::new(chain_config.api.clone()));
                 let fetcher = Arc::new(TronFetcher { client });
-                spawn_fetcher(fetcher, sender_clone, start_block, chain_config.interval_secs)
+                tokio::spawn(crate::fetcher::runner::run_fetcher(fetcher, sender_clone, start_block, interval_duration))
             }
             "theta" => {
                 let client = Arc::new(ThetaClient::new(chain_config.api.clone()));
                 let fetcher = Arc::new(ThetaFetcher { client });
-                spawn_fetcher(fetcher, sender_clone, start_block, chain_config.interval_secs)
+                tokio::spawn(crate::fetcher::runner::run_fetcher(fetcher, sender_clone, start_block, interval_duration))
             }
             "icon" => {
                 let client = Arc::new(IconClient::new(chain_config.api.clone()));
                 let fetcher = Arc::new(IconFetcher { client });
-                spawn_fetcher(fetcher, sender_clone, start_block, chain_config.interval_secs)
+                tokio::spawn(crate::fetcher::runner::run_fetcher(fetcher, sender_clone, start_block, interval_duration))
             }
             _ => {
                 warn!("Unknown blockchain: {}, skipping...", chain_name);
@@ -230,7 +191,24 @@ async fn main() -> Result<(), AppError> {
         None
     };
 
-    // 8. Spawn analyzer
+    // 8. Spawn customer address sync task (if configured)
+    if let Some(customer_sync_config) = &settings.customer_sync {
+        if let Some(kv_db_ref) = &kv_db {
+            info!("Starting customer address sync service...");
+            let sync_config = crate::tasks::CustomerSyncConfig {
+                sqs_queue_url: customer_sync_config.sqs_queue_url.clone(),
+                aws_region: customer_sync_config.aws_region.clone(),
+                batch_size: customer_sync_config.batch_size,
+                flush_interval_secs: customer_sync_config.flush_interval_secs,
+                cache_file_path: customer_sync_config.cache_file_path.clone(),
+            };
+            crate::tasks::run_customer_address_sync(kv_db_ref.clone(), sync_config).await;
+        } else {
+            warn!("Customer sync configured but no RocksDB available, skipping");
+        }
+    }
+
+    // 9. Spawn analyzer
     let analyzer_handle = tokio::spawn(analyzer::run_analyzer(
         receiver,
         repository.clone(),
@@ -238,12 +216,12 @@ async fn main() -> Result<(), AppError> {
         sqs_notifier,
         settings.get_chain_configs().into_iter().collect(),
     ));
-    
-    // 9. Wait for shutdown signal
+
+    // 11. Wait for shutdown signal
     shutdown_signal().await;
     info!("Shutdown signal received. Waiting for tasks to finish...");
 
-    // 10. Gracefully wait for all fetchers
+    // 12. Gracefully wait for all fetchers
     for handle in fetcher_handles {
         let _ = handle.await;
     }

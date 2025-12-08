@@ -14,8 +14,8 @@ pub struct MemoryRepository {
     // chain_name -> last_processed_block
     last_processed_blocks: Arc<RwLock<HashMap<String, u64>>>,
     
-    // chain_name:address -> customer_id (???? ??)
-    customer_addresses: Arc<RwLock<HashMap<String, String>>>, // key: "chain_name:address", value: customer_id
+    // chain_name:address -> monitored flag (customer_id 제거됨)
+    monitored_addresses: Arc<RwLock<HashMap<String, bool>>>, // key: "chain_name:address", value: true
     
     // (chain_name, tx_hash) -> deposit_event
     deposit_events: Arc<RwLock<HashMap<(String, String), DepositEvent>>>,
@@ -26,7 +26,6 @@ pub struct MemoryRepository {
 
 #[derive(Clone)]
 struct DepositEvent {
-    customer_id: String,
     address: String,
     chain_name: String,
     tx_hash: String,
@@ -40,7 +39,7 @@ impl MemoryRepository {
     pub fn new() -> Self {
         Self {
             last_processed_blocks: Arc::new(RwLock::new(HashMap::new())),
-            customer_addresses: Arc::new(RwLock::new(HashMap::new())),
+            monitored_addresses: Arc::new(RwLock::new(HashMap::new())),
             deposit_events: Arc::new(RwLock::new(HashMap::new())),
             customer_balances: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -78,18 +77,16 @@ impl Repository for MemoryRepository {
         Ok(())
     }
     
-    async fn get_customer_id_by_address(&self, address: &str, chain_name: &str) -> Result<Option<String>, AppError> {
-        let addresses = self.customer_addresses.read().await;
+    async fn is_monitored_address(&self, address: &str, chain_name: &str) -> Result<bool, AppError> {
+        let addresses = self.monitored_addresses.read().await;
         let normalized_address = address.to_lowercase();
         let key = format!("{}:{}", chain_name.to_lowercase(), normalized_address);
-        
-        // chain_name:address ??? ?? ?? ??
-        Ok(addresses.get(&key).cloned())
+
+        Ok(addresses.contains_key(&key))
     }
-    
+
     async fn save_deposit_event(
         &self,
-        customer_id: &str,
         address: &str,
         chain_name: &str,
         tx_hash: &str,
@@ -99,14 +96,13 @@ impl Repository for MemoryRepository {
     ) -> Result<(), AppError> {
         let mut events = self.deposit_events.write().await;
         let key = (chain_name.to_string(), tx_hash.to_string());
-        
-        // ?? ???? ?? (UNIQUE ??)
+
+        // 중복 체크 (UNIQUE 제약)
         if events.contains_key(&key) {
             return Ok(());
         }
-        
+
         events.insert(key, DepositEvent {
-            customer_id: customer_id.to_string(),
             address: address.to_string(),
             chain_name: chain_name.to_string(),
             tx_hash: tx_hash.to_string(),
@@ -115,33 +111,21 @@ impl Repository for MemoryRepository {
             amount_decimal,
             confirmed: false,
         });
-        
+
         Ok(())
     }
-    
-    async fn increment_customer_balance(
-        &self,
-        customer_id: &str,
-        chain_name: &str,
-        amount: Decimal,
-    ) -> Result<(), AppError> {
-        let mut balances = self.customer_balances.write().await;
-        let key = (customer_id.to_string(), chain_name.to_string());
-        
-        let current_balance = balances.get(&key).copied().unwrap_or(Decimal::ZERO);
-        balances.insert(key, current_balance + amount);
-        
-        Ok(())
-    }
-    
+
+    // Note: increment_customer_balance removed
+    // Balance management is handled by blockbit-back-custody, not xScanner
+
     async fn load_customer_addresses(&self, chain_name: &str) -> Result<usize, AppError> {
-        // ??? ?????? ?? ??? ???? ???? ?? ???? ??
-        let addresses = self.customer_addresses.read().await;
+        // 메모리 저장소에서 특정 체인의 주소 개수 반환
+        let addresses = self.monitored_addresses.read().await;
         let prefix = format!("{}:", chain_name.to_lowercase());
         let count = addresses.iter()
             .filter(|(k, _)| k.starts_with(&prefix))
             .count();
-        
+
         warn!("MemoryRepository: load_customer_addresses called for {}, found {} addresses", chain_name, count);
         Ok(count)
     }

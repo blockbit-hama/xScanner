@@ -6,7 +6,6 @@ use log::{info, error};
 #[serde(tag = "event")]
 pub enum DepositEvent {
     DepositDetected {
-        customer_id: String,
         address: String,
         chain: String,
         tx_hash: String,
@@ -15,7 +14,6 @@ pub enum DepositEvent {
         confirmations: u64,
     },
     DepositConfirmed {
-        customer_id: String,
         address: String,
         chain: String,
         tx_hash: String,
@@ -62,7 +60,6 @@ impl SqsNotifier {
 
     pub async fn send_deposit_detected(
         &self,
-        customer_id: String,
         address: String,
         chain: String,
         tx_hash: String,
@@ -70,7 +67,6 @@ impl SqsNotifier {
         block_number: u64,
     ) -> Result<(), String> {
         let event = DepositEvent::DepositDetected {
-            customer_id,
             address,
             chain,
             tx_hash,
@@ -84,7 +80,6 @@ impl SqsNotifier {
 
     pub async fn send_deposit_confirmed(
         &self,
-        customer_id: String,
         address: String,
         chain: String,
         tx_hash: String,
@@ -93,7 +88,6 @@ impl SqsNotifier {
         confirmations: u64,
     ) -> Result<(), String> {
         let event = DepositEvent::DepositConfirmed {
-            customer_id,
             address,
             chain,
             tx_hash,

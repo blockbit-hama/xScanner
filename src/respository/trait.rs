@@ -14,13 +14,12 @@ pub trait Repository: Send + Sync {
     /// ????? ??? ?? ?? ???
     async fn init_last_processed_block(&self, chain: &str, initial_block: u64) -> Result<(), AppError>;
     
-    /// ??? ?? ID ??
-    async fn get_customer_id_by_address(&self, address: &str, chain_name: &str) -> Result<Option<String>, AppError>;
-    
-    /// ?? ??? ??
+    /// 주소가 관리 대상인지 확인 (RocksDB 캐시 조회용)
+    async fn is_monitored_address(&self, address: &str, chain_name: &str) -> Result<bool, AppError>;
+
+    /// 입금 이벤트 저장 (customer_id 제거됨)
     async fn save_deposit_event(
         &self,
-        customer_id: &str,
         address: &str,
         chain_name: &str,
         tx_hash: &str,
@@ -28,15 +27,10 @@ pub trait Repository: Send + Sync {
         amount: &str,
         amount_decimal: Option<Decimal>,
     ) -> Result<(), AppError>;
-    
-    /// ?? ?? ??
-    async fn increment_customer_balance(
-        &self,
-        customer_id: &str,
-        chain_name: &str,
-        amount: Decimal,
-    ) -> Result<(), AppError>;
-    
+
+    // Note: increment_customer_balance removed
+    // Balance management is handled by blockbit-back-custody, not xScanner
+
     /// ?? ???? ?? (????)
     async fn load_customer_addresses(&self, chain_name: &str) -> Result<usize, AppError>;
 

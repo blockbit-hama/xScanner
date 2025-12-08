@@ -15,3 +15,10 @@ customer_address_file = "./customer_addresses.txt"
 [notification]
 sqs_queue_url = "https://sqs.ap-northeast-2.amazonaws.com/YOUR_ACCOUNT_ID/deposit-events"
 aws_region = "ap-northeast-2"
+
+[customer_sync]
+sqs_queue_url = "https://sqs.ap-northeast-2.amazonaws.com/YOUR_ACCOUNT_ID/customer-address-updates"
+aws_region = "ap-northeast-2"
+batch_size = 100
+flush_interval_secs = 5
+cache_file_path = "./customer_addresses_cache.json"  # Optional: Load on startup for crash recovery

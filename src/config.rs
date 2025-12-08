@@ -8,6 +8,8 @@ pub struct Settings {
   pub repository: RepositorySettings,
   #[serde(default)]
   pub notification: Option<NotificationSettings>,
+  #[serde(default)]
+  pub customer_sync: Option<CustomerSyncSettings>,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -42,6 +44,31 @@ pub struct ChainConfig {
 pub struct NotificationSettings {
   pub sqs_queue_url: String,
   pub aws_region: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct CustomerSyncSettings {
+  pub sqs_queue_url: String,
+  #[serde(default = "default_aws_region")]
+  pub aws_region: String,
+  #[serde(default = "default_batch_size")]
+  pub batch_size: usize,
+  #[serde(default = "default_flush_interval_secs")]
+  pub flush_interval_secs: u64,
+  #[serde(default)]
+  pub cache_file_path: Option<String>,
+}
+
+fn default_aws_region() -> String {
+  "ap-northeast-2".to_string()
+}
+
+fn default_batch_size() -> usize {
+  100
+}
+
+fn default_flush_interval_secs() -> u64 {
+  5
 }
 
 fn default_required_confirmations() -> u64 {

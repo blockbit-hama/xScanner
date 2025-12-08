@@ -97,20 +97,19 @@ impl Repository for RocksDBRepository {
     }
 
     #[cfg(feature = "rocksdb-backend")]
-    async fn get_customer_id_by_address(&self, address: &str, chain_name: &str) -> Result<Option<String>, AppError> {
-        // RocksDB는 chain_name:address 형식의 키를 사용
-        self.get_customer_id_from_rocksdb(address, chain_name)
+    async fn is_monitored_address(&self, address: &str, chain_name: &str) -> Result<bool, AppError> {
+        use crate::respository::is_monitored_address_in_rocksdb;
+        is_monitored_address_in_rocksdb(&self.db, address, chain_name)
     }
 
     #[cfg(not(feature = "rocksdb-backend"))]
-    async fn get_customer_id_by_address(&self, _address: &str, _chain_name: &str) -> Result<Option<String>, AppError> {
+    async fn is_monitored_address(&self, _address: &str, _chain_name: &str) -> Result<bool, AppError> {
         Err(AppError::Database("RocksDB feature not enabled".to_string()))
     }
 
     #[cfg(feature = "rocksdb-backend")]
     async fn save_deposit_event(
         &self,
-        customer_id: &str,
         address: &str,
         chain_name: &str,
         tx_hash: &str,
@@ -127,7 +126,6 @@ impl Repository for RocksDBRepository {
 
         // DepositEvent를 JSON으로 직렬화하여 저장
         let event = serde_json::json!({
-            "customer_id": customer_id,
             "address": address,
             "chain_name": chain_name,
             "tx_hash": tx_hash,
@@ -148,7 +146,6 @@ impl Repository for RocksDBRepository {
     #[cfg(not(feature = "rocksdb-backend"))]
     async fn save_deposit_event(
         &self,
-        _customer_id: &str,
         _address: &str,
         _chain_name: &str,
         _tx_hash: &str,
@@ -159,42 +156,8 @@ impl Repository for RocksDBRepository {
         Err(AppError::Database("RocksDB feature not enabled".to_string()))
     }
 
-    #[cfg(feature = "rocksdb-backend")]
-    async fn increment_customer_balance(
-        &self,
-        customer_id: &str,
-        chain_name: &str,
-        amount: Decimal,
-    ) -> Result<(), AppError> {
-        let key = format!("balance:{}:{}", customer_id, chain_name);
-
-        let current_balance = match self.db.get(key.as_bytes()) {
-            Ok(Some(value)) => {
-                let balance_str = String::from_utf8(value.to_vec())
-                    .map_err(|e| AppError::Database(format!("Invalid UTF-8: {}", e)))?;
-                balance_str.parse::<Decimal>()
-                    .unwrap_or(Decimal::ZERO)
-            }
-            Ok(None) => Decimal::ZERO,
-            Err(_) => Decimal::ZERO,
-        };
-
-        let new_balance = current_balance + amount;
-        self.db.put(key.as_bytes(), new_balance.to_string().as_bytes())
-            .map_err(|e| AppError::Database(format!("RocksDB put failed: {}", e)))?;
-
-        Ok(())
-    }
-
-    #[cfg(not(feature = "rocksdb-backend"))]
-    async fn increment_customer_balance(
-        &self,
-        _customer_id: &str,
-        _chain_name: &str,
-        _amount: Decimal,
-    ) -> Result<(), AppError> {
-        Err(AppError::Database("RocksDB feature not enabled".to_string()))
-    }
+    // Note: increment_customer_balance removed
+    // Balance management is handled by blockbit-back-custody, not xScanner
 
     async fn load_customer_addresses(&self, chain_name: &str) -> Result<usize, AppError> {
         // RocksDB는 키-값 저장소이므로 특정 체인의 주소 개수를 세려면 반복이 필요

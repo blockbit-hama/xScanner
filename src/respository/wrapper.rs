@@ -57,16 +57,15 @@ impl Repository for RepositoryWrapper {
         }
     }
     
-    async fn get_customer_id_by_address(&self, address: &str, chain_name: &str) -> Result<Option<String>, AppError> {
+    async fn is_monitored_address(&self, address: &str, chain_name: &str) -> Result<bool, AppError> {
         match self {
-            RepositoryWrapper::Memory(r) => r.get_customer_id_by_address(address, chain_name).await,
-            RepositoryWrapper::PostgreSQL(r) => r.get_customer_id_by_address(address, chain_name).await,
+            RepositoryWrapper::Memory(r) => r.is_monitored_address(address, chain_name).await,
+            RepositoryWrapper::PostgreSQL(r) => r.is_monitored_address(address, chain_name).await,
         }
     }
-    
+
     async fn save_deposit_event(
         &self,
-        customer_id: &str,
         address: &str,
         chain_name: &str,
         tx_hash: &str,
@@ -75,23 +74,14 @@ impl Repository for RepositoryWrapper {
         amount_decimal: Option<rust_decimal::Decimal>,
     ) -> Result<(), AppError> {
         match self {
-            RepositoryWrapper::Memory(r) => r.save_deposit_event(customer_id, address, chain_name, tx_hash, block_number, amount, amount_decimal).await,
-            RepositoryWrapper::PostgreSQL(r) => r.save_deposit_event(customer_id, address, chain_name, tx_hash, block_number, amount, amount_decimal).await,
+            RepositoryWrapper::Memory(r) => r.save_deposit_event(address, chain_name, tx_hash, block_number, amount, amount_decimal).await,
+            RepositoryWrapper::PostgreSQL(r) => r.save_deposit_event(address, chain_name, tx_hash, block_number, amount, amount_decimal).await,
         }
     }
-    
-    async fn increment_customer_balance(
-        &self,
-        customer_id: &str,
-        chain_name: &str,
-        amount: rust_decimal::Decimal,
-    ) -> Result<(), AppError> {
-        match self {
-            RepositoryWrapper::Memory(r) => r.increment_customer_balance(customer_id, chain_name, amount).await,
-            RepositoryWrapper::PostgreSQL(r) => r.increment_customer_balance(customer_id, chain_name, amount).await,
-        }
-    }
-    
+
+    // Note: increment_customer_balance removed
+    // Balance management is handled by blockbit-back-custody, not xScanner
+
     async fn load_customer_addresses(&self, chain_name: &str) -> Result<usize, AppError> {
         match self {
             RepositoryWrapper::Memory(r) => r.load_customer_addresses(chain_name).await,

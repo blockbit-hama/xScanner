@@ -16,7 +16,7 @@ xScanner는 다중 블록체인을 모니터링하여 고객 주소로의 입금
 │   Analyzer  │ → 트랜잭션 분석 & 고객 주소 매칭
 └──────┬──────┘
        │
-       ├─→ PostgreSQL (deposit_events, customer_balance)
+       ├─→ PostgreSQL (deposit_events 로깅만)
        └─→ SQS Queue (blockbit-back-custody 알림)
 ```
 
@@ -38,8 +38,79 @@ xScanner는 다중 블록체인을 모니터링하여 고객 주소로의 입금
   4. 입금 발견 시 → `process_deposit()` 호출
 
 ### 3. Repository (데이터 저장소)
-- **PostgreSQL**: 입금 이벤트, 고객 잔액, last_processed_block 저장
+- **PostgreSQL**: 입금 이벤트 로깅(audit), last_processed_block 상태 관리
 - **LevelDB/RocksDB**: 고객 주소 캐싱 (빠른 조회)
+
+---
+
+## Role Separation: xScanner vs Backend (역할 분리)
+
+### ⚠️ IMPORTANT: Balance Management Responsibility
+
+**xScanner의 역할**: 입금 이벤트 관찰 및 로깅 (Observer Pattern)
+- 블록체인 트랜잭션 스캔
+- 고객 주소 매칭
+- 입금 이벤트 감지 및 로깅 (`deposit_events` 테이블)
+- SQS를 통한 백엔드 알림
+- **잔액 관리하지 않음** ❌
+
+**blockbit-back-custody의 역할**: 잔액 관리 및 Source of Truth
+- SQS 메시지 수신
+- 블록체인 직접 조회로 최종 잔액 확인
+- `customer_balances` 테이블 관리 (단일 진실 공급원)
+- Sweep 실행 전 블록체인 재확인
+
+### Why This Separation?
+
+1. **Single Source of Truth**: 블록체인이 궁극적인 진실. DB는 캐시일 뿐
+2. **Fault Tolerance**: 스캐너가 일부 입금을 놓쳐도, 백엔드가 블록체인 조회로 최종 확인
+3. **Data Consistency**: 두 서비스가 같은 잔액 데이터를 관리하면 불일치 발생 가능
+4. **Clear Responsibility**: xScanner = 이벤트 로거, Backend = 잔액 매니저
+
+### Database Schema
+
+**xScanner가 관리하는 테이블**:
+- `blockchain_state` - 마지막 처리 블록 번호
+- `deposit_events` - **입금 이벤트 로그 (audit용)**
+- ~~`customer_addresses`~~ - **제거됨** (Backend에서 관리)
+
+**Backend가 관리하는 테이블**:
+- `customer_addresses` - 고객 주소 매핑 (Single Source of Truth)
+- `customer_balances` - 고객 잔액 (Single Source of Truth)
+
+### Customer Address Sync (고객 주소 동기화)
+
+xScanner는 고객 주소를 **Backend로부터 실시간 동기화**합니다:
+
+```
+Backend (고객 가입)
+   ↓
+customer_addresses 테이블에 INSERT
+   ↓
+SQS 메시지 발송 (CustomerAddressAdded)
+   ↓
+xScanner (SQS Consumer)
+   ↓
+RocksDB 캐시 업데이트 (배치 100개 or 5초마다)
+```
+
+**다운타임 대응**:
+- xScanner 재시작 시 `customer_addresses_cache.json` 파일에서 로드
+- Backend는 주기적으로 전체 주소 목록을 JSON 파일로 export
+- 파일이 없으면 SQS 메시지 기반으로만 동작
+
+### Data Flow
+
+```
+Backend (고객 주소 관리)
+   ↓
+   ├─→ SQS (실시간 sync) → xScanner RocksDB
+   └─→ File (재시작 대비) → customer_addresses_cache.json
+
+Blockchain → xScanner (입금 감지) → SQS → Backend (잔액 업데이트)
+                ↓                                  ↓
+         deposit_events (audit)          customer_balances (진실)
+```
 
 ---
 
@@ -80,9 +151,9 @@ sequenceDiagram
             Note over Analyzer: DepositInfo {<br/>  customer_id,<br/>  address,<br/>  tx_hash,<br/>  amount,<br/>  block_number<br/>}
 
             Analyzer->>PG: save_deposit_event(...)
-            Analyzer->>PG: increment_customer_balance(...)
+            Note over Analyzer: ⚠️ Balance는 Backend가 관리
 
-            Note over Analyzer: ✅ Deposit saved to DB
+            Note over Analyzer: ✅ Deposit logged to DB
         else Not customer address
             KV-->>Analyzer: None
         end

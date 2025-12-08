@@ -30,12 +30,10 @@ pub use postgresql::get_last_processed_block;
 pub use postgresql::setup_db_schema;
 pub use postgresql::update_last_processed_block;
 pub use postgresql::init_last_processed_block;
-pub use postgresql::get_customer_id_by_address;
 pub use postgresql::save_deposit_event;
-pub use postgresql::increment_customer_balance;
-
-#[cfg(feature = "rocksdb-backend")]
-pub use postgresql::load_customer_addresses_to_rocksdb;
+// Note: increment_customer_balance removed - balance management handled by backend
+// Note: get_customer_id_by_address removed - uses RocksDB cache only
+// Note: load_customer_addresses_to_rocksdb removed - uses SQS + file cache instead
 
 #[cfg(feature = "leveldb-backend")]
 pub use leveldb::open_leveldb;
@@ -49,8 +47,18 @@ pub use leveldb::batch_add_customer_addresses;
 #[cfg(feature = "rocksdb-backend")]
 pub use rocksdb::open_rocksdb;
 #[cfg(feature = "rocksdb-backend")]
+pub use rocksdb::add_monitored_address_to_rocksdb;
+#[cfg(feature = "rocksdb-backend")]
+pub use rocksdb::is_monitored_address_in_rocksdb;
+#[cfg(feature = "rocksdb-backend")]
+pub use rocksdb::batch_add_monitored_addresses;
+// Deprecated exports for backward compatibility
+#[cfg(feature = "rocksdb-backend")]
+#[allow(deprecated)]
 pub use rocksdb::add_customer_address_to_rocksdb;
 #[cfg(feature = "rocksdb-backend")]
+#[allow(deprecated)]
 pub use rocksdb::get_customer_id_from_rocksdb;
 #[cfg(feature = "rocksdb-backend")]
+#[allow(deprecated)]
 pub use rocksdb::batch_add_customer_addresses;

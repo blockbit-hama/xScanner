@@ -6,6 +6,7 @@
 */
 
 pub mod analyzer;
+pub mod chains;
 
 pub use analyzer::run_analyzer;
 pub use analyzer::KeyValueDB;

@@ -1,0 +1,17 @@
+[
+  {
+    "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    "customer_id": "customer_001",
+    "chain": "ETH"
+  },
+  {
+    "address": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+    "customer_id": "customer_002",
+    "chain": "BTC"
+  },
+  {
+    "address": "TRX123456789ABCDEFGHIJKLMNOPQRSTUV",
+    "customer_id": "customer_003",
+    "chain": "TRX"
+  }
+]
