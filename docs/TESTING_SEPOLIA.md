@@ -7,12 +7,12 @@
 `config.toml`이 Sepolia로 설정되어 있는지 확인:
 
 ```toml
-[blockchain.ethereum]
+[blockchain.sepolia]
 api = "https://sepolia.infura.io/v3/51d1d5bfaeab44fc87d77cf298d7c591"
-symbol = "eth"
+symbol = "sepolia"
 start_block = 9801775  # Current Sepolia block
-interval_secs = 5
-required_confirmations = 12  # 빠른 테스트를 위해 3으로 줄일 수 있음
+interval_secs = 8      # Sepolia blocks ~12s
+required_confirmations = 6  # Sepolia testnet (mainnet은 12)
 ```
 
 ### 2. 모니터링할 주소 등록
@@ -22,23 +22,21 @@ required_confirmations = 12  # 빠른 테스트를 위해 3으로 줄일 수 있
 파일 위치: `./customer_addresses_cache.json`
 
 ```json
-{
-  "ethereum": [
-    {
-      "address": "0xYourSepoliaTestAddress",
-      "wallet_id": "test_wallet_001",
-      "account_id": "test_account_001",
-      "chain": "ethereum"
-    }
-  ]
-}
+[
+  {
+    "address": "0xYourSepoliaTestAddress",
+    "wallet_id": "test_wallet_001",
+    "account_id": "test_account_001",
+    "chain": "sepolia"
+  }
+]
 ```
 
 **필드 설명**:
 - `address`: 모니터링할 Sepolia 주소
 - `wallet_id`: Custody Wallet ID (테스트용 임의 값)
 - `account_id`: Virtual Account ID (Omnibus는 `null`, 일반 계정은 문자열)
-- `chain`: 체인 이름 (`"ethereum"` 고정)
+- `chain`: 체인 이름 (`"sepolia"` - config.toml 섹션명과 일치)
 
 #### 방법 B: RocksDB에 직접 추가 (고급)
 
@@ -64,10 +62,10 @@ cargo run
 **실행 로그 확인**:
 ```
 [INFO] Application starting...
-[INFO] Using MemoryRepository (memory_db = true)
+[INFO] Using PostgreSQL repository (memory_db = false)
 [INFO] Starting customer address sync service...
 [INFO] [ConfirmationChecker] Starting with check_interval: 30s
-[INFO] Ethereum scanner from block 9801775
+[INFO] Initializing sepolia scanner from block 9801775
 ```
 
 ### 5. 테스트 입금 보내기
@@ -93,14 +91,14 @@ Amount: 0.01 ETH (소량)
 [INFO] [SQS] DEPOSIT_DETECTED sent
 ```
 
-#### Stage 2: DEPOSIT_CONFIRMED (12 confirmations)
+#### Stage 2: DEPOSIT_CONFIRMED (6 confirmations)
 
-약 2.5분 후 (Sepolia는 ~12초/블록):
+약 72초 후 (Sepolia는 ~12초/블록):
 
 ```
 [INFO] [ConfirmationChecker] Checking 1 pending deposits
-[INFO] [ConfirmationChecker] Deposit 0xabcd1234... on ethereum - confirmations: 12/12
-[INFO] [ConfirmationChecker] ✅ Deposit 0xabcd1234... reached 12 confirmations, sending DEPOSIT_CONFIRMED
+[INFO] [ConfirmationChecker] Deposit 0xabcd1234... on SEPOLIA - confirmations: 6/6
+[INFO] [ConfirmationChecker] ✅ Deposit 0xabcd1234... reached 6 confirmations, sending DEPOSIT_CONFIRMED
 [INFO] [ConfirmationChecker] ✅ SQS DEPOSIT_CONFIRMED sent for 0xabcd1234...
 ```
 
@@ -170,7 +168,7 @@ required_confirmations = 3  # 12에서 3으로 변경
 - ✅ 입금 트랜잭션 감지 (1 confirmation)
 - ✅ DB에 `confirmed=FALSE` 저장
 - ✅ SQS DEPOSIT_DETECTED 발송
-- ✅ 12 confirmations 후 `confirmed=TRUE` 업데이트
+- ✅ 6 confirmations 후 `confirmed=TRUE` 업데이트
 - ✅ SQS DEPOSIT_CONFIRMED 발송
 
 ## 📝 테스트 체크리스트
@@ -181,7 +179,7 @@ required_confirmations = 3  # 12에서 3으로 변경
 - [ ] xScanner 실행 확인
 - [ ] 테스트 입금 전송
 - [ ] DEPOSIT_DETECTED 로그 확인
-- [ ] DEPOSIT_CONFIRMED 로그 확인 (12 블록 후)
+- [ ] DEPOSIT_CONFIRMED 로그 확인 (6 블록 후, ~72초)
 - [ ] DB에서 confirmed=TRUE 확인
 
 ## 🔗 유용한 링크

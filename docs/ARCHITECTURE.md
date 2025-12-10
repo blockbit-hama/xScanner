@@ -32,8 +32,8 @@ xScanner는 입금을 **2단계로 처리**하여 안전성과 UX를 모두 확�
 enabled = true  # Default: true
 check_interval_secs = 30  # Default: 30
 
-[blockchain.ethereum]
-required_confirmations = 12  # ETH: 12, BTC: 3, SOL: 40
+[blockchain.sepolia]
+required_confirmations = 6  # Sepolia testnet: 6, Mainnet ETH: 12, BTC: 3, SOL: 40
 ```
 
 ## Core Components
