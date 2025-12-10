@@ -1,0 +1,38 @@
+[
+  {
+    "address": "0x713Ab8115A2C3C27523A7e1a33b9868E2C8A84A8",
+    "chain": "sepolia",
+    "wallet_id": "cmizmnicp0002pjiyybtszvvy",
+    "account_id": null
+  },
+  {
+    "address": "0x898f9631558DF3eD0Dfc72912BE62228aEaB0C84",
+    "chain": "sepolia",
+    "wallet_id": "cmizmnicp0002pjiyybtszvvy",
+    "account_id": "cmizmo4yt0006pjiymgyaafjh"
+  },
+  {
+    "address": "0xA865A57e1eBd0FeA442000726f61a4c34449311C",
+    "chain": "sepolia",
+    "wallet_id": "cmizmnicp0002pjiyybtszvvy",
+    "account_id": "cmizn8c2p0001pjiq4qi2ba5o"
+  },
+  {
+    "address": "0x32a18C840Ea8402C708e0d32202BEc8DD6DF60a0",
+    "chain": "sepolia",
+    "wallet_id": "cmizmnicp0002pjiyybtszvvy",
+    "account_id": "cmiznjnh70001pj9i3zztn68e"
+  },
+  {
+    "address": "0x8D9f3b888B93008482468c1351BD441Cfad7758E",
+    "chain": "sepolia",
+    "wallet_id": "cmizmnicp0002pjiyybtszvvy",
+    "account_id": "cmiznmwfu0001pjt9ue9clpxv"
+  },
+  {
+    "address": "0x5C2964eD7Ee60CB8f71746b9Bc437329D85685D8",
+    "chain": "sepolia",
+    "wallet_id": "cmizmnicp0002pjiyybtszvvy",
+    "account_id": "cmiznnk3q0003pjt9ni64osue"
+  }
+]

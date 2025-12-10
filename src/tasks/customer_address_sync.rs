@@ -87,10 +87,26 @@ pub async fn run_customer_address_sync(
     let sqs_queue_url = config.sqs_queue_url.clone();
     let aws_region = config.aws_region.clone();
     tokio::spawn(async move {
-        let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(aws_sdk_sqs::config::Region::new(aws_region))
-            .load()
-            .await;
+        let is_local = sqs_queue_url.starts_with("http://localhost") || sqs_queue_url.starts_with("http://127.0.0.1");
+
+        let mut aws_config_loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(aws_sdk_sqs::config::Region::new(aws_region.clone()));
+
+        // For local development with ElasticMQ
+        if is_local {
+            info!("[CustomerSync] Using local ElasticMQ endpoint with dummy credentials");
+            aws_config_loader = aws_config_loader
+                .endpoint_url("http://localhost:9324")
+                .credentials_provider(aws_sdk_sqs::config::Credentials::new(
+                    "dummy",
+                    "dummy",
+                    None,
+                    None,
+                    "static",
+                ));
+        }
+
+        let aws_config = aws_config_loader.load().await;
         let sqs = SqsClient::new(&aws_config);
 
         info!("[CustomerSync] SQS Consumer started, queue: {}", sqs_queue_url);

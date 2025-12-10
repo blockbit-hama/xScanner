@@ -131,3 +131,14 @@ Cargo.lock
 *.pdb
 
 # End of https://www.toptal.com/developers/gitignore/api/clion,rust
+
+# RocksDB database
+customer_db/
+
+# Environment variables
+.env
+
+# Additional IDE files
+.idea/dataSources.xml
+.idea/data_source_mapping.xml
+.idea/misc.xml

@@ -4,6 +4,38 @@
 
 xScanner는 다중 블록체인을 모니터링하여 고객 주소로의 입금을 실시간으로 감지하고, blockbit-back-custody에 알림을 전송하는 Rust 기반 스캐너 서비스입니다.
 
+## Key Features ✨
+
+### 🚀 2-Stage Deposit Notification System (IMPLEMENTED)
+
+xScanner는 입금을 **2단계로 처리**하여 안전성과 UX를 모두 확보합니다:
+
+| Stage | Event | Timing | Purpose |
+|-------|-------|--------|---------|
+| **1. Detection** | `DEPOSIT_DETECTED` | 1 confirmation | 즉시 알림 (UX) |
+| **2. Confirmation** | `DEPOSIT_CONFIRMED` | Required confirmations | 확정 후 sweep 트리거 (보안) |
+
+**구현 방식**:
+1. **Fetcher + Analyzer**: 새 블록을 스캔하여 입금 발견 시 즉시 `DEPOSIT_DETECTED` 발송
+2. **Confirmation Checker** (별도 스케줄러):
+   - 30초마다 DB의 미확정 입금(`confirmed=FALSE`)을 조회
+   - Required confirmations 도달 시 `DEPOSIT_CONFIRMED` 발송
+   - DB 업데이트 (`confirmed=TRUE`)
+
+**Why Separate Scheduler?**
+- Fetcher는 새 블록만 스캔하므로, 과거 트랜잭션의 confirmation 증가를 감지하지 못함
+- Confirmation Checker가 주기적으로 DB를 폴링하여 해결
+
+**Configuration**:
+```toml
+[confirmation_checker]
+enabled = true  # Default: true
+check_interval_secs = 30  # Default: 30
+
+[blockchain.ethereum]
+required_confirmations = 12  # ETH: 12, BTC: 3, SOL: 40
+```
+
 ## Core Components
 
 ```
@@ -282,54 +314,58 @@ sqs_queue_url = "https://sqs.ap-northeast-2.amazonaws.com/123456789/deposit-even
 aws_region = "ap-northeast-2"
 ```
 
-### Updated Flow with Confirmations
+### Updated Flow with Confirmations (IMPLEMENTED)
 
 ```mermaid
 sequenceDiagram
     participant Chain as Blockchain
-    participant Scanner as xScanner
+    participant Fetcher as Fetcher
+    participant Analyzer as Analyzer
+    participant DB as PostgreSQL
+    participant Checker as ConfirmationChecker
     participant SQS as AWS SQS
     participant Backend as blockbit-back-custody
-    participant WS as WebSocket (Frontend)
-    participant Webhook as Customer Webhook
 
-    Note over Chain,Webhook: === Stage 1: DEPOSIT_DETECTED (1 confirm) ===
+    Note over Chain,Backend: === Stage 1: DEPOSIT_DETECTED (1 confirmation) ===
 
-    Chain->>Scanner: New Block N (1 confirmation)
-    Scanner->>Scanner: analyze_block()<br/>→ Found deposit to customer address
+    Chain->>Fetcher: getBlock(N)
+    Fetcher->>Analyzer: BlockData via mpsc
+    Analyzer->>Analyzer: Found deposit to customer address
 
-    Scanner->>Scanner: confirmations = 1<br/>→ Trigger DEPOSIT_DETECTED
-
-    Scanner->>SQS: sendMessage({<br/>  event: "DEPOSIT_DETECTED",<br/>  customer_id,<br/>  address,<br/>  amount,<br/>  tx_hash,<br/>  block_number: N,<br/>  confirmations: 1<br/>})
+    Analyzer->>DB: save_deposit_event(..., confirmed=FALSE)
+    Analyzer->>SQS: DEPOSIT_DETECTED {<br/>  address, wallet_id, account_id,<br/>  chain, tx_hash, amount,<br/>  block_number: N, confirmations: 1<br/>}
 
     SQS->>Backend: Poll message
-    Backend->>Backend: UnifiedNotificationService<br/>→ Send WebSocket notification
-    Backend->>WS: 🔔 "입금 감지됨, 확정 대기 중..."
-    Backend->>Webhook: 🔔 DEPOSIT_DETECTED webhook
+    Backend->>Backend: 🔔 "입금 감지됨"
 
-    Note over Chain,Webhook: === Stage 2: DEPOSIT_CONFIRMED (충분한 confirms) ===
+    Note over Chain,Backend: === Stage 2: DEPOSIT_CONFIRMED (충분한 확인) ===
+    Note over Checker: ⏰ Every 30 seconds
 
-    alt Ethereum (12 confirms)
-        Chain->>Scanner: Block N+11 (12 confirmations)
-        Note over Scanner: ETH: 12 ≥ 12 ✅
-    else Bitcoin (3 confirms)
-        Chain->>Scanner: Block N+2 (3 confirmations)
-        Note over Scanner: BTC: 3 ≥ 3 ✅
-    else Solana (40 confirms)
-        Chain->>Scanner: Block N+39 (40 confirmations)
-        Note over Scanner: SOL: 40 ≥ 40 ✅
+    loop Confirmation Checker
+        Checker->>DB: SELECT * FROM deposit_events<br/>WHERE confirmed = FALSE
+        DB-->>Checker: [pending deposits]
+
+        loop For each pending deposit
+            Checker->>DB: get_last_processed_block(chain)
+            DB-->>Checker: current_block
+
+            Checker->>Checker: confirmations = <br/>current_block - block_number + 1
+
+            alt confirmations >= required_confirmations
+                Checker->>DB: is_deposit_confirmed(tx_hash)?
+                DB-->>Checker: FALSE (not confirmed yet)
+
+                Checker->>DB: UPDATE deposit_events<br/>SET confirmed = TRUE<br/>WHERE tx_hash = ...
+
+                Checker->>SQS: DEPOSIT_CONFIRMED {<br/>  address, wallet_id, account_id,<br/>  chain, tx_hash, amount,<br/>  block_number, confirmations<br/>}
+
+                SQS->>Backend: Poll message
+                Backend->>Backend: 🔔 "입금 확정!"<br/>→ processDeposit()<br/>→ Auto-sweep Queue
+            else confirmations < required
+                Note over Checker: Wait for more blocks...
+            end
+        end
     end
-
-    Scanner->>Scanner: Check tx in block N<br/>confirmations ≥ required
-
-    Scanner->>SQS: sendMessage({<br/>  event: "DEPOSIT_CONFIRMED",<br/>  customer_id,<br/>  address,<br/>  amount,<br/>  tx_hash,<br/>  block_number: N,<br/>  confirmations<br/>})
-
-    SQS->>Backend: Poll message
-    Backend->>Backend: custody-wallet.service.ts<br/>→ processDeposit()
-    Backend->>Backend: virtualBalance += amount<br/>omnibusBalance += amount
-    Backend->>Backend: Auto-sweep Queue (if threshold met)
-    Backend->>WS: 🔔 "입금 확정! +1.0 ETH"
-    Backend->>Webhook: 🔔 DEPOSIT_CONFIRMED webhook
 ```
 
 ### Implementation Details
@@ -495,80 +531,112 @@ pub async fn send_to_sqs(
 
 ---
 
-## Pending Deposits Monitoring (미확정 입금 추적)
+## Pending Deposits Monitoring (미확정 입금 추적) - **IMPLEMENTED**
 
 ### Problem
 
-confirmations가 required보다 작은 PENDING 상태의 입금을 계속 추적해야 합니다.
+DEPOSIT_DETECTED 이벤트는 즉시 발생하지만, DEPOSIT_CONFIRMED 이벤트는 required_confirmations에 도달해야 발생합니다.
 
-### Solution: Periodic Confirmation Check
+문제는 Fetcher가 **새 블록만 스캔**하기 때문에, 과거 블록의 트랜잭션이 confirmation 임계값에 도달해도 감지되지 않습니다.
+
+### Solution: Periodic Confirmation Checker (구현 완료)
+
+**구현 위치**: `src/tasks/confirmation_checker.rs`
+
+별도의 백그라운드 스케줄러가 주기적으로 DB의 미확정 입금을 체크하고, required_confirmations에 도달하면 DEPOSIT_CONFIRMED를 발송합니다.
+
+### Configuration (config.toml)
+
+```toml
+[confirmation_checker]
+enabled = true  # Enable/disable confirmation checker
+check_interval_secs = 30  # Check every 30 seconds
+```
+
+**설정 설명**:
+- `enabled`: confirmation checker 활성화 여부 (기본값: `true`)
+- `check_interval_secs`: 확인 주기 (초 단위, 기본값: `30`)
+
+### Implementation (실제 구현)
 
 ```rust
-// src/tasks/confirmation_checker.rs (NEW)
+// src/tasks/confirmation_checker.rs
 
+use crate::respository::RepositoryWrapper;
+use crate::notification::sqs_client::SqsNotifier;
+use crate::config::ChainConfig;
 use tokio::time::{interval, Duration};
+
+pub struct PendingDeposit {
+    pub address: String,
+    pub wallet_id: String,
+    pub account_id: Option<String>,
+    pub chain_name: String,
+    pub tx_hash: String,
+    pub block_number: u64,
+    pub amount: String,
+    pub amount_decimal: Option<rust_decimal::Decimal>,
+}
 
 pub async fn run_confirmation_checker(
     repository: Arc<RepositoryWrapper>,
     chain_configs: HashMap<String, ChainConfig>,
+    sqs_notifier: Option<Arc<SqsNotifier>>,
+    config: ConfirmationCheckerConfig,
 ) {
-    let mut ticker = interval(Duration::from_secs(60)); // 1분마다 체크
+    if !config.enabled {
+        info!("[ConfirmationChecker] Disabled by configuration, skipping...");
+        return;
+    }
+
+    let mut check_interval = interval(Duration::from_secs(config.check_interval_secs));
 
     loop {
-        ticker.tick().await;
+        check_interval.tick().await;
 
-        // 모든 PENDING 입금 조회
-        let pending_deposits = match repository.get_pending_deposits().await {
-            Ok(deposits) => deposits,
-            Err(e) => {
-                error!("Failed to fetch pending deposits: {}", e);
-                continue;
-            }
-        };
+        // 1. Get all pending (unconfirmed) deposits from database
+        let pending_deposits = repository.get_pending_deposits().await?;
 
-        info!("Checking {} pending deposits...", pending_deposits.len());
-
+        // 2. For each pending deposit
         for deposit in pending_deposits {
-            let chain_config = match chain_configs.get(&deposit.chain) {
-                Some(config) => config,
-                None => continue,
-            };
+            let required_confirmations = chain_configs
+                .get(&deposit.chain_name.to_uppercase())
+                .map(|c| c.required_confirmations)
+                .unwrap_or(12);
 
-            // 현재 블록 번호 조회
-            let current_block = match repository.get_last_processed_block(&deposit.chain).await {
-                Ok(block) => block,
-                Err(_) => continue,
-            };
+            // 3. Get current block number for this chain
+            let current_block = repository.get_last_processed_block(&deposit.chain_name).await?;
 
+            // 4. Calculate confirmations
             let confirmations = current_block.saturating_sub(deposit.block_number) + 1;
 
-            // Confirmation 도달 시 DEPOSIT_CONFIRMED 발송
-            if confirmations >= chain_config.required_confirmations {
-                info!(
-                    "[Confirmation Checker] Deposit {} reached {} confirmations",
-                    deposit.tx_hash, confirmations
-                );
+            // 5. Check if reached required confirmations
+            if confirmations >= required_confirmations {
+                // 6. Double-check to prevent duplicates
+                let is_confirmed = repository.is_deposit_confirmed(&deposit.tx_hash).await?;
 
-                // Send DEPOSIT_CONFIRMED to SQS
-                if let Err(e) = send_to_sqs(SqsEvent::DepositConfirmed {
-                    customer_id: deposit.customer_id,
-                    address: deposit.address,
-                    chain: deposit.chain,
-                    tx_hash: deposit.tx_hash.clone(),
-                    amount: deposit.amount,
-                    block_number: deposit.block_number,
-                    confirmations,
-                }).await {
-                    error!("Failed to send DEPOSIT_CONFIRMED: {}", e);
-                    continue;
-                }
+                if !is_confirmed {
+                    info!(
+                        "[ConfirmationChecker] ✅ Deposit {} reached {} confirmations, sending DEPOSIT_CONFIRMED",
+                        deposit.tx_hash, confirmations
+                    );
 
-                // Update status
-                if let Err(e) = repository.update_deposit_status(
-                    &deposit.tx_hash,
-                    DepositStatus::Confirmed,
-                ).await {
-                    error!("Failed to update deposit status: {}", e);
+                    // 7. Update database (mark as confirmed)
+                    repository.update_deposit_confirmed(&deposit.tx_hash).await?;
+
+                    // 8. Send SQS notification
+                    if let Some(notifier) = sqs_notifier.as_ref() {
+                        notifier.send_deposit_confirmed(
+                            deposit.address,
+                            deposit.wallet_id,
+                            deposit.account_id,
+                            deposit.chain_name.to_uppercase(),
+                            deposit.tx_hash,
+                            deposit.amount,
+                            deposit.block_number,
+                            confirmations,
+                        ).await?;
+                    }
                 }
             }
         }
@@ -576,22 +644,109 @@ pub async fn run_confirmation_checker(
 }
 ```
 
-### PostgreSQL Query
+### Database Schema (deposit_events)
 
 ```sql
--- 미확정 입금 조회 (PENDING 상태)
-SELECT
-    customer_id,
-    address,
-    chain,
-    tx_hash,
-    amount,
-    block_number,
-    detected_at,
-    EXTRACT(EPOCH FROM (NOW() - detected_at)) as pending_seconds
-FROM deposit_events
-WHERE status = 'PENDING'
-ORDER BY detected_at ASC;
+CREATE TABLE IF NOT EXISTS deposit_events (
+    id SERIAL PRIMARY KEY,
+    address VARCHAR(255) NOT NULL,
+    wallet_id VARCHAR(255) NOT NULL,
+    account_id VARCHAR(255),
+    chain_name VARCHAR(50) NOT NULL,
+    tx_hash VARCHAR(255) NOT NULL,
+    block_number BIGINT NOT NULL,
+    amount VARCHAR(255) NOT NULL,
+    amount_decimal NUMERIC(36, 18),
+    confirmed BOOLEAN DEFAULT FALSE,  -- ✅ confirmation_checker가 TRUE로 업데이트
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(chain_name, tx_hash)
+);
+
+-- Index for efficient queries
+CREATE INDEX idx_de_confirmed ON deposit_events (confirmed) WHERE confirmed = FALSE;
+```
+
+### Repository Methods Added
+
+```rust
+// src/respository/trait.rs
+
+#[async_trait]
+pub trait Repository: Send + Sync {
+    // ... existing methods ...
+
+    /// Get all pending (unconfirmed) deposits for confirmation checking
+    async fn get_pending_deposits(&self) -> Result<Vec<crate::tasks::PendingDeposit>, AppError>;
+}
+```
+
+**구현된 Repository**:
+- ✅ `PostgreSQLRepository::get_pending_deposits()` - `WHERE confirmed = FALSE ORDER BY block_number ASC`
+- ✅ `MemoryRepository::get_pending_deposits()` - In-memory filtering
+- ✅ `RocksDBRepository::get_pending_deposits()` - Iterator-based scanning
+- ✅ `RepositoryWrapper::get_pending_deposits()` - Delegate pattern
+
+### Main Integration (src/main.rs)
+
+```rust
+// 8.5. Spawn confirmation checker task
+let confirmation_checker_handle = if let Some(confirmation_checker_config) = &settings.confirmation_checker {
+    let checker_config = crate::tasks::ConfirmationCheckerConfig {
+        enabled: confirmation_checker_config.enabled,
+        check_interval_secs: confirmation_checker_config.check_interval_secs,
+    };
+
+    let chain_configs_map: std::collections::HashMap<String, config::ChainConfig> =
+        settings.get_chain_configs().into_iter().collect();
+
+    Some(tokio::spawn(crate::tasks::run_confirmation_checker(
+        repository.clone(),
+        chain_configs_map,
+        sqs_notifier.clone(),
+        checker_config,
+    )))
+} else {
+    // Use default config if not specified
+    Some(tokio::spawn(crate::tasks::run_confirmation_checker(
+        repository.clone(),
+        settings.get_chain_configs().into_iter().collect(),
+        sqs_notifier.clone(),
+        crate::tasks::ConfirmationCheckerConfig::default(),
+    )))
+};
+```
+
+### Flow Diagram: Confirmation Checker
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  Confirmation Checker Loop (every 30 seconds)                  │
+└────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+        ┌────────────────────────────────────────┐
+        │ SELECT * FROM deposit_events           │
+        │ WHERE confirmed = FALSE                │
+        └────────────────┬───────────────────────┘
+                         │
+                         ▼
+        ┌────────────────────────────────────────┐
+        │ For each pending deposit:              │
+        │  1. Get current_block from repository  │
+        │  2. Calculate confirmations            │
+        │  3. Check if >= required_confirmations │
+        └────────────────┬───────────────────────┘
+                         │
+                         ▼
+        ┌────────────────────────────────────────┐
+        │ confirmations >= required?             │
+        └────┬───────────────────────────────┬───┘
+             │ YES                           │ NO
+             ▼                               ▼
+┌──────────────────────────┐       ┌────────────────┐
+│ 1. Update confirmed=TRUE │       │ Continue       │
+│ 2. Send SQS (CONFIRMED)  │       └────────────────┘
+└──────────────────────────┘
 ```
 
 ---

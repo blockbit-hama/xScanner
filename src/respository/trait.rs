@@ -44,4 +44,7 @@ pub trait Repository: Send + Sync {
 
     /// Check if a deposit is already confirmed
     async fn is_deposit_confirmed(&self, tx_hash: &str) -> Result<bool, AppError>;
+
+    /// Get all pending (unconfirmed) deposits for confirmation checking
+    async fn get_pending_deposits(&self) -> Result<Vec<crate::tasks::PendingDeposit>, AppError>;
 }

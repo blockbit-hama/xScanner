@@ -111,6 +111,13 @@ impl Repository for RepositoryWrapper {
             RepositoryWrapper::PostgreSQL(r) => r.is_deposit_confirmed(tx_hash).await,
         }
     }
+
+    async fn get_pending_deposits(&self) -> Result<Vec<crate::tasks::PendingDeposit>, AppError> {
+        match self {
+            RepositoryWrapper::Memory(r) => r.get_pending_deposits().await,
+            RepositoryWrapper::PostgreSQL(r) => r.get_pending_deposits().await,
+        }
+    }
 }
 
 impl RepositoryWrapper {

@@ -30,6 +30,7 @@ pub async fn run_fetcher<F: BlockFetcher + 'static>(
     tick.tick().await;
     let block_to_fetch = current_block_number;
 
+    info!("===============================================");
     info!("[{} Fetcher] 블록 #{} 가져오는 중...", fetcher.chain_name(), block_to_fetch);
 
     match fetcher.fetch_block(block_to_fetch).await {
@@ -48,13 +49,16 @@ pub async fn run_fetcher<F: BlockFetcher + 'static>(
         current_block_number += 1;
       }
       Err(e) => {
+        let retry_delay = interval_duration / 2;
         warn!(
-          "[{} Fetcher] ⏳ 블록 #{} 가져오기 실패: {} | 5초 후 재시도...",
+          "[{} Fetcher] ⏳ 블록 #{} 가져오기 실패: {} | {:?} 후 재시도...",
           fetcher.chain_name(),
           block_to_fetch,
-          e
+          e,
+          retry_delay
         );
-        // 블록 번호를 증가시키지 않고 다음 interval에 재시도
+        // 블록 번호를 증가시키지 않고 interval의 절반 시간 후 재시도
+        tokio::time::sleep(retry_delay).await;
       }
     }
   }

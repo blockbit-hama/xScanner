@@ -45,6 +45,6 @@ impl BlockFetcher for EthereumFetcher {
   // }
   
   fn chain_name(&self) -> &'static str {
-    "ETH"
+    "SEPOLIA"
   }
 }

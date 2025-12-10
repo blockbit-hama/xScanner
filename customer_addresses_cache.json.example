@@ -1,17 +1,24 @@
-[
-  {
-    "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-    "customer_id": "customer_001",
-    "chain": "ETH"
-  },
-  {
-    "address": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
-    "customer_id": "customer_002",
-    "chain": "BTC"
-  },
-  {
-    "address": "TRX123456789ABCDEFGHIJKLMNOPQRSTUV",
-    "customer_id": "customer_003",
-    "chain": "TRX"
-  }
-]
+{
+  "ethereum": [
+    {
+      "address": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+      "wallet_id": "wallet_uuid_001",
+      "account_id": "account_uuid_001",
+      "chain": "ethereum"
+    },
+    {
+      "address": "0x1234567890123456789012345678901234567890",
+      "wallet_id": "wallet_uuid_002",
+      "account_id": null,
+      "chain": "ethereum"
+    }
+  ],
+  "bitcoin": [
+    {
+      "address": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+      "wallet_id": "wallet_uuid_003",
+      "account_id": "account_uuid_002",
+      "chain": "bitcoin"
+    }
+  ]
+}

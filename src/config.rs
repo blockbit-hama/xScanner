@@ -10,6 +10,8 @@ pub struct Settings {
   pub notification: Option<NotificationSettings>,
   #[serde(default)]
   pub customer_sync: Option<CustomerSyncSettings>,
+  #[serde(default)]
+  pub confirmation_checker: Option<ConfirmationCheckerSettings>,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -59,6 +61,14 @@ pub struct CustomerSyncSettings {
   pub cache_file_path: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct ConfirmationCheckerSettings {
+  #[serde(default = "default_confirmation_checker_enabled")]
+  pub enabled: bool,
+  #[serde(default = "default_check_interval_secs")]
+  pub check_interval_secs: u64,
+}
+
 fn default_aws_region() -> String {
   "ap-northeast-2".to_string()
 }
@@ -73,6 +83,14 @@ fn default_flush_interval_secs() -> u64 {
 
 fn default_required_confirmations() -> u64 {
   12 // Default to Ethereum's 12 confirmations
+}
+
+fn default_confirmation_checker_enabled() -> bool {
+  true
+}
+
+fn default_check_interval_secs() -> u64 {
+  30
 }
 
 #[derive(Debug, Deserialize, Clone)]

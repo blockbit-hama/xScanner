@@ -251,3 +251,48 @@ pub async fn update_deposit_confirmed(
   Ok(())
 }
 
+// Get all pending (unconfirmed) deposits for confirmation checking
+pub async fn get_pending_deposits(
+  pool: &PgPool,
+) -> Result<Vec<crate::tasks::PendingDeposit>, AppError> {
+  let query = format!(
+    "SELECT address, wallet_id, account_id, chain_name, tx_hash, block_number, amount, amount_decimal FROM {} WHERE confirmed = FALSE ORDER BY block_number ASC",
+    DEPOSIT_EVENTS_TABLE
+  );
+
+  let rows = sqlx::query(&query)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::Database(format!("Failed to get pending deposits: {}", e)))?;
+
+  let mut deposits = Vec::new();
+  for row in rows {
+    let address: String = row.get("address");
+    let wallet_id: String = row.get("wallet_id");
+    let account_id: Option<String> = row.get("account_id");
+    let chain_name: String = row.get("chain_name");
+    let tx_hash: String = row.get("tx_hash");
+    let block_number: i64 = row.get("block_number");
+    let amount: String = row.get("amount");
+    let amount_decimal_bigdecimal: Option<bigdecimal::BigDecimal> = row.get("amount_decimal");
+
+    // Convert bigdecimal::BigDecimal to rust_decimal::Decimal
+    let amount_decimal = amount_decimal_bigdecimal.and_then(|bd| {
+      rust_decimal::Decimal::from_str(&bd.to_string()).ok()
+    });
+
+    deposits.push(crate::tasks::PendingDeposit {
+      address,
+      wallet_id,
+      account_id,
+      chain_name,
+      tx_hash,
+      block_number: block_number as u64,
+      amount,
+      amount_decimal,
+    });
+  }
+
+  Ok(deposits)
+}
+

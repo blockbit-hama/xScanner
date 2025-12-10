@@ -104,4 +104,8 @@ impl Repository for PostgreSQLRepository {
     async fn is_deposit_confirmed(&self, tx_hash: &str) -> Result<bool, AppError> {
         crate::respository::postgresql::is_deposit_confirmed(&self.pool, tx_hash).await
     }
+
+    async fn get_pending_deposits(&self) -> Result<Vec<crate::tasks::PendingDeposit>, AppError> {
+        crate::respository::postgresql::get_pending_deposits(&self.pool).await
+    }
 }

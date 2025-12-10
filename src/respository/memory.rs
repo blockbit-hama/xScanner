@@ -155,6 +155,28 @@ impl Repository for MemoryRepository {
 
         Ok(false)
     }
+
+    async fn get_pending_deposits(&self) -> Result<Vec<crate::tasks::PendingDeposit>, AppError> {
+        let events = self.deposit_events.read().await;
+
+        let mut deposits = Vec::new();
+        for ((_, _), event) in events.iter() {
+            if !event.confirmed {
+                deposits.push(crate::tasks::PendingDeposit {
+                    address: event.address.clone(),
+                    wallet_id: String::new(), // MemoryRepository doesn't store wallet_id
+                    account_id: None,
+                    chain_name: event.chain_name.clone(),
+                    tx_hash: event.tx_hash.clone(),
+                    block_number: event.block_number,
+                    amount: event.amount.clone(),
+                    amount_decimal: event.amount_decimal,
+                });
+            }
+        }
+
+        Ok(deposits)
+    }
 }
 
 // Helper function to update deposit confirmation status for MemoryRepository

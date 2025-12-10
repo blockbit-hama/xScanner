@@ -3,6 +3,7 @@ use crate::respository::r#trait::Repository;
 use async_trait::async_trait;
 use rust_decimal::Decimal;
 use std::sync::Arc;
+use std::str::FromStr;
 use log::info;
 
 #[cfg(feature = "rocksdb-backend")]
@@ -218,6 +219,64 @@ impl Repository for RocksDBRepository {
 
     #[cfg(not(feature = "rocksdb-backend"))]
     async fn is_deposit_confirmed(&self, _tx_hash: &str) -> Result<bool, AppError> {
+        Err(AppError::Database("RocksDB feature not enabled".to_string()))
+    }
+
+    #[cfg(feature = "rocksdb-backend")]
+    async fn get_pending_deposits(&self) -> Result<Vec<crate::tasks::PendingDeposit>, AppError> {
+        use rocksdb::IteratorMode;
+
+        let mut deposits = Vec::new();
+        let prefix = b"deposit:";
+
+        // Iterate over all keys starting with "deposit:"
+        for item in self.db.iterator(IteratorMode::From(prefix, rocksdb::Direction::Forward)) {
+            let (key, value) = item.map_err(|e| AppError::Database(format!("RocksDB iterator failed: {}", e)))?;
+
+            // Check if this key starts with our prefix
+            if !key.starts_with(prefix) {
+                break; // No more deposit keys
+            }
+
+            // Parse the JSON value
+            let value_str = String::from_utf8(value.to_vec())
+                .map_err(|e| AppError::Database(format!("Invalid UTF-8: {}", e)))?;
+
+            let event: serde_json::Value = serde_json::from_str(&value_str)
+                .map_err(|e| AppError::Database(format!("Failed to parse deposit event: {}", e)))?;
+
+            // Check if confirmed field is false (or missing, which means unconfirmed)
+            let confirmed = event.get("confirmed").and_then(|v| v.as_bool()).unwrap_or(false);
+            if !confirmed {
+                let address = event.get("address").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let wallet_id = event.get("wallet_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let account_id = event.get("account_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let chain_name = event.get("chain_name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let tx_hash = event.get("tx_hash").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let block_number = event.get("block_number").and_then(|v| v.as_u64()).unwrap_or(0);
+                let amount = event.get("amount").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let amount_decimal = event.get("amount_decimal")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Decimal::from_str(s).ok());
+
+                deposits.push(crate::tasks::PendingDeposit {
+                    address,
+                    wallet_id,
+                    account_id,
+                    chain_name,
+                    tx_hash,
+                    block_number,
+                    amount,
+                    amount_decimal,
+                });
+            }
+        }
+
+        Ok(deposits)
+    }
+
+    #[cfg(not(feature = "rocksdb-backend"))]
+    async fn get_pending_deposits(&self) -> Result<Vec<crate::tasks::PendingDeposit>, AppError> {
         Err(AppError::Database("RocksDB feature not enabled".to_string()))
     }
 }

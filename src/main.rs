@@ -137,7 +137,7 @@ async fn main() -> Result<(), AppError> {
 
         // Spawn fetcher based on chain name
         let handle = match chain_name.to_lowercase().as_str() {
-            "ethereum" | "eth" => {
+            "ethereum" | "eth" | "sepolia" => {
                 let client = Arc::new(EthereumClient::new(chain_config.api.clone()));
                 let fetcher = Arc::new(EthereumFetcher { client });
                 tokio::spawn(crate::fetcher::runner::run_fetcher(fetcher, sender_clone, start_block, interval_duration))
@@ -208,6 +208,35 @@ async fn main() -> Result<(), AppError> {
         }
     }
 
+    // 8.5. Spawn confirmation checker task (if configured)
+    let confirmation_checker_handle = if let Some(confirmation_checker_config) = &settings.confirmation_checker {
+        let checker_config = crate::tasks::ConfirmationCheckerConfig {
+            enabled: confirmation_checker_config.enabled,
+            check_interval_secs: confirmation_checker_config.check_interval_secs,
+        };
+
+        let chain_configs_map: std::collections::HashMap<String, config::ChainConfig> =
+            settings.get_chain_configs().into_iter().collect();
+
+        Some(tokio::spawn(crate::tasks::run_confirmation_checker(
+            repository.clone(),
+            chain_configs_map,
+            sqs_notifier.clone(),
+            checker_config,
+        )))
+    } else {
+        info!("Confirmation checker not configured, using defaults");
+        let chain_configs_map: std::collections::HashMap<String, config::ChainConfig> =
+            settings.get_chain_configs().into_iter().collect();
+
+        Some(tokio::spawn(crate::tasks::run_confirmation_checker(
+            repository.clone(),
+            chain_configs_map,
+            sqs_notifier.clone(),
+            crate::tasks::ConfirmationCheckerConfig::default(),
+        )))
+    };
+
     // 9. Spawn analyzer
     let analyzer_handle = tokio::spawn(analyzer::run_analyzer(
         receiver,
@@ -226,7 +255,10 @@ async fn main() -> Result<(), AppError> {
         let _ = handle.await;
     }
     let _ = analyzer_handle.await;
-    
+    if let Some(handle) = confirmation_checker_handle {
+        let _ = handle.await;
+    }
+
     info!("Application exited cleanly.");
     Ok(())
 }

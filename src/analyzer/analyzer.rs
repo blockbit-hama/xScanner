@@ -68,6 +68,8 @@ pub async fn run_analyzer(
                         block_number,
                         required_confirmations,
                         sqs_clone.as_deref(),
+                        #[cfg(feature = "rocksdb-backend")]
+                        kv_db_clone.as_deref(),
                     ).await {
                         error!("[Analyzer] Failed to process deposit: {}", e);
                     }
@@ -183,10 +185,25 @@ async fn process_deposit(
     current_block: u64,
     required_confirmations: u64,
     sqs_notifier: Option<&SqsNotifier>,
+    #[cfg(feature = "rocksdb-backend")]
+    kv_db: Option<&KeyValueDB>,
 ) -> Result<(), String> {
     let confirmations = current_block.saturating_sub(deposit.block_number) + 1;
 
-    // Get wallet_id and account_id from repository (RocksDB cache)
+    // Get wallet_id and account_id from RocksDB cache
+    #[cfg(feature = "rocksdb-backend")]
+    let (wallet_id, account_id) = if let Some(db) = kv_db {
+        use crate::respository::get_address_metadata_from_rocksdb;
+        match get_address_metadata_from_rocksdb(db, &deposit.address, chain_name) {
+            Ok(Some(metadata)) => (metadata.wallet_id, metadata.account_id),
+            Ok(None) => return Err(format!("Address metadata not found in RocksDB for {}", deposit.address)),
+            Err(e) => return Err(format!("Failed to get address metadata from RocksDB: {}", e)),
+        }
+    } else {
+        return Err("RocksDB not available".to_string());
+    };
+
+    #[cfg(not(feature = "rocksdb-backend"))]
     let (wallet_id, account_id) = repository
         .get_address_metadata(&deposit.address, chain_name)
         .await

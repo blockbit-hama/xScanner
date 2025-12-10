@@ -34,11 +34,26 @@ pub struct SqsNotifier {
 
 impl SqsNotifier {
     pub async fn new(queue_url: String, region: String) -> Result<Self, String> {
-        let config = aws_config::from_env()
-            .region(aws_config::Region::new(region))
-            .load()
-            .await;
+        let is_local = queue_url.starts_with("http://localhost") || queue_url.starts_with("http://127.0.0.1");
 
+        let mut config_loader = aws_config::from_env()
+            .region(aws_config::Region::new(region));
+
+        // For local development with ElasticMQ
+        if is_local {
+            info!("Using local ElasticMQ endpoint with dummy credentials");
+            config_loader = config_loader
+                .endpoint_url("http://localhost:9324")
+                .credentials_provider(aws_sdk_sqs::config::Credentials::new(
+                    "dummy",
+                    "dummy",
+                    None,
+                    None,
+                    "static",
+                ));
+        }
+
+        let config = config_loader.load().await;
         let client = SqsClient::new(&config);
 
         Ok(Self { client, queue_url })

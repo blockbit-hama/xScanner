@@ -227,6 +227,16 @@ cargo test --test bitcoin_it
 cargo test
 ```
 
+### Development Tools
+
+```bash
+# RocksDB 내용 확인 (주소 캐시)
+cargo run --example check_rocksdb -- ./dummy_db
+
+# ElasticMQ (로컬 SQS)
+# blockbit-custody의 docker-compose.yml에서 실행 중
+```
+
 ### Adding a New Blockchain
 
 1. **Create coin module** (`src/coin/yourchain/`)

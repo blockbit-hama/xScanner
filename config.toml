@@ -1,24 +1,28 @@
 [blockchain]
-[blockchain.ethereum]
-api = "https://mainnet.infura.io/v3/51d1d5bfaeab44fc87d77cf298d7c591"
-symbol = "eth"
-start_block = 23695633
-interval_secs = 5
-required_confirmations = 12
+[blockchain.sepolia]
+api = "https://sepolia.infura.io/v3/51d1d5bfaeab44fc87d77cf298d7c591"
+symbol = "sepolia"
+start_block = 9801775  # Current Sepolia block (2025-12-09)
+interval_secs = 8      # Sepolia/Ethereum blocks are generated every ~15s
+required_confirmations = 6
 
 [repository]
-memory_db = true
-postgresql_url = "postgres://dummy:dummy@localhost:5432/dummy"
-leveldb_path = "./dummy_db"
+memory_db = false
+postgresql_url = "postgres://user:1111@localhost:5433/blockbit_xscanner"
+leveldb_path = "./customer_db"
 customer_address_file = "./customer_addresses.txt"
 
 [notification]
-sqs_queue_url = "https://sqs.ap-northeast-2.amazonaws.com/YOUR_ACCOUNT_ID/deposit-events"
+sqs_queue_url = "http://localhost:9324/000000000000/deposit-events-queue"
 aws_region = "ap-northeast-2"
 
 [customer_sync]
-sqs_queue_url = "https://sqs.ap-northeast-2.amazonaws.com/YOUR_ACCOUNT_ID/customer-address-updates"
+sqs_queue_url = "http://localhost:9324/000000000000/customer-address-updates-queue"
 aws_region = "ap-northeast-2"
 batch_size = 100
 flush_interval_secs = 5
 cache_file_path = "./customer_addresses_cache.json"  # Optional: Load on startup for crash recovery
+
+[confirmation_checker]
+enabled = true  # Enable/disable confirmation checker
+check_interval_secs = 30  # Check every 30 seconds

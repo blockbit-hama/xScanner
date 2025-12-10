@@ -29,11 +29,23 @@ where
     let mut deposits = Vec::new();
     let mut checked_count = 0;
 
-    for tx in &transactions {
+    for (i, tx) in transactions.iter().enumerate() {
         if let Some(to_address) = &tx.to {
             checked_count += 1;
 
-            if is_monitored(repository, kv_db, to_address, chain_name).await? {
+            // Check RocksDB directly
+            #[cfg(feature = "rocksdb-backend")]
+            let is_addr_monitored = if let Some(db) = kv_db {
+                use crate::respository::is_monitored_address_in_rocksdb;
+                is_monitored_address_in_rocksdb(db, to_address, chain_name).unwrap_or(false)
+            } else {
+                false
+            };
+
+            #[cfg(not(feature = "rocksdb-backend"))]
+            let is_addr_monitored = is_monitored(repository, kv_db, to_address, chain_name).await?;
+
+            if is_addr_monitored {
                 let amount_hex = tx.value.as_deref().unwrap_or("0x0");
                 let amount_decimal = parse_wei_to_decimal(amount_hex).ok();
 
@@ -75,7 +87,7 @@ pub async fn analyze_ethereum_block<F>(
 where
     F: Fn(&Arc<RepositoryWrapper>, Option<&KeyValueDB>, &str, &str) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<bool, String>> + Send>>,
 {
-    let chain_name = "ETH";
+    let chain_name = "SEPOLIA";
     let result = block.result.ok_or("Missing 'result' in EthereumBlock")?;
 
     let number_hex = result.number.trim();
